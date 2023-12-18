@@ -175,12 +175,7 @@ void set_nrf(const uint32_t baudrate, const uint32_t word_length, const uint32_t
 
 void set_fsk(const size_t deviation) {
     const FSKRxConfigureMessage message{
-        taps_200k_decim_0,
-        taps_16k0_decim_1,
-        taps_11k0_channel,
-        2,
         deviation};
-
     send_message(&message);
 }
 

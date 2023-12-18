@@ -1,9 +1,8 @@
 /*
- * Copyright (C) 1996 Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
- * Copyright (C) 2012-2014 Elias Oenal (multimon-ng@eliasoenal.com)
  * Copyright (C) 2015 Jared Boone, ShareBrained Technology, Inc.
  * Copyright (C) 2016 Furrtek
- * Copyright (C) 2023 Kyle Reed
+ * Copyright (C) 2020 Shao
+ * Copyright (C) 2023 TJ Baginski
  *
  * This file is part of PortaPack.
  *
@@ -24,292 +23,271 @@
  */
 
 #include "proc_fsk_rx.hpp"
+#include "portapack_shared_memory.hpp"
 
 #include "event_m4.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <cstddef>
+void FSKRxProcessor::handleBeginState() {
+    int num_symbol_left = dst_buffer.count / SAMPLE_PER_SYMBOL;  // One buffer sample consist of I and Q.
 
-using namespace std;
-using namespace dsp::decimate;
+    static uint8_t demod_buf_access[SAMPLE_PER_SYMBOL][LEN_DEMOD_BUF_ACCESS];
 
-namespace {
-/* Count of bits that differ between the two values. */
-uint8_t diff_bit_count(uint32_t left, uint32_t right) {
-    uint32_t diff = left ^ right;
-    uint8_t count = 0;
-    for (size_t i = 0; i < sizeof(diff) * 8; ++i) {
-        if (((diff >> i) & 0x1) == 1)
-            ++count;
+    uint32_t uint32_tmp = DEFAULT_ACCESS_ADDR;
+    uint8_t accessAddrBits[LEN_DEMOD_BUF_ACCESS];
+
+    uint32_t accesssAddress = 0;
+
+    // Filling up addressBits with the access address we are looking to find.
+    for (int i = 0; i < 32; i++) {
+        accessAddrBits[i] = 0x01 & uint32_tmp;
+        uint32_tmp = (uint32_tmp >> 1);
     }
 
-    return count;
-}
-}  // namespace
+    const int demod_buf_len = LEN_DEMOD_BUF_ACCESS;  // For AA
+    int demod_buf_offset = 0;
+    int hit_idx = (-1);
+    bool unequal_flag = false;
 
-/* AudioNormalizer ***************************************/
+    memset(demod_buf_access, 0, SAMPLE_PER_SYMBOL * demod_buf_len);
 
-void AudioNormalizer::execute_in_place(const buffer_f32_t& audio) {
-    // Decay min/max every second (@24kHz).
-    if (counter_ >= 24'000) {
-        // 90% decay factor seems to work well.
-        // This keeps large transients from wrecking the filter.
-        max_ *= 0.9f;
-        min_ *= 0.9f;
-        counter_ = 0;
-        calculate_thresholds();
-    }
+    for (int i = 0; i < num_symbol_left * SAMPLE_PER_SYMBOL; i += SAMPLE_PER_SYMBOL) {
+        int sp = ((demod_buf_offset - demod_buf_len + 1) & (demod_buf_len - 1));
 
-    counter_ += audio.count;
+        for (int j = 0; j < SAMPLE_PER_SYMBOL; j++) {
+            // Sample and compare with the adjacent next sample.
+            int I0 = dst_buffer.p[i + j].real();
+            int Q0 = dst_buffer.p[i + j].imag();
+            int I1 = dst_buffer.p[i + j + 1].real();
+            int Q1 = dst_buffer.p[i + j + 1].imag();
 
-    for (size_t i = 0; i < audio.count; ++i) {
-        auto& val = audio.p[i];
+            int phase_idx = j;
 
-        if (val > max_) {
-            max_ = val;
-            calculate_thresholds();
+            demod_buf_access[phase_idx][demod_buf_offset] = (I0 * Q1 - I1 * Q0) > 0 ? 1 : 0;
+
+            int k = sp;
+            unequal_flag = false;
+
+            accesssAddress = 0;
+
+            for (int p = 0; p < demod_buf_len; p++) {
+                if (demod_buf_access[phase_idx][k] != accessAddrBits[p]) {
+                    unequal_flag = true;
+                    hit_idx = (-1);
+                    break;
+                }
+
+                accesssAddress = (accesssAddress & (~(1 << p))) | (demod_buf_access[phase_idx][k] << p);
+
+                k = ((k + 1) & (demod_buf_len - 1));
+            }
+
+            if (unequal_flag == false) {
+                hit_idx = (i + j - (demod_buf_len - 1) * SAMPLE_PER_SYMBOL);
+                break;
+            }
         }
-        if (val < min_) {
-            min_ = val;
-            calculate_thresholds();
+
+        if (unequal_flag == false) {
+            break;
         }
 
-        if (val >= t_hi_)
-            val = 1.0f;
-        else if (val <= t_lo_)
-            val = -1.0f;
-        else
-            val = 0.0;
+        demod_buf_offset = ((demod_buf_offset + 1) & (demod_buf_len - 1));
     }
-}
 
-void AudioNormalizer::calculate_thresholds() {
-    auto center = (max_ + min_) / 2.0f;
-    auto range = (max_ - min_) / 2.0f;
-
-    // 10% off center force either +/-1.0f.
-    // Higher == larger dead zone.
-    // Lower == more false positives.
-    auto threshold = range * 0.1;
-    t_hi_ = center + threshold;
-    t_lo_ = center - threshold;
-}
-
-/* FSKRxProcessor ******************************************/
-
-void FSKRxProcessor::clear_data_bits() {
-    data = 0;
-    bit_count = 0;
-}
-
-void FSKRxProcessor::handle_sync(bool inverted) {
-    clear_data_bits();
-    has_sync_ = true;
-    inverted = inverted;
-    word_count = 0;
-}
-
-void FSKRxProcessor::process_bits(const buffer_c8_t& buffer) {
-    // Process all of the bits in the bits queue.
-    while (buffer.count > 0) {
-        // Wait until data_ is full.
-        if (bit_count < data_bit_count)
-            continue;
-
-        // Wait for the sync frame.
-        if (!has_sync_) {
-            if (diff_bit_count(data, sync_codeword) <= 2)
-                handle_sync(/*inverted=*/false);
-            else if (diff_bit_count(data, ~sync_codeword) <= 2)
-                handle_sync(/*inverted=*/true);
-            continue;
-        }
-    }
-}
-
-/* FSKRxProcessor ***************************************/
-
-FSKRxProcessor::FSKRxProcessor() {
-}
-
-void FSKRxProcessor::execute(const buffer_c8_t& buffer) {
-    if (!configured) {
+    if (hit_idx == -1) {
+        // Process more samples.
         return;
     }
 
-    // Decimate by current decim 0 and decim 1.
-    const auto decim_0_out = decim_0.execute(buffer, dst_buffer);
-    const auto decim_1_out = decim_1.execute(decim_0_out, dst_buffer);
+    symbols_eaten += hit_idx;
 
-    feed_channel_stats(decim_1_out);
+    symbols_eaten += (8 * NUM_ACCESS_ADDR_BYTE * SAMPLE_PER_SYMBOL);  // move to the beginning of PDU header
 
-    spectrum_samples += decim_1_out.count;
+    num_symbol_left = num_symbol_left - symbols_eaten;
 
-    if (spectrum_samples >= spectrum_interval_samples) {
-        spectrum_samples -= spectrum_interval_samples;
-        channel_spectrum.feed(decim_1_out, channel_filter_low_f,
-                              channel_filter_high_f, channel_filter_transition);
+//----------------------------------------
+    fskPacketData.max_dB = max_dB;
+
+    fskPacketData.type = 0;
+    fskPacketData.size = 31;
+
+    fskPacketData.deviceId[0] = (accesssAddress >> 24) & 0xFF;
+    fskPacketData.deviceId[1] = (accesssAddress >> 16) & 0xFF;
+    fskPacketData.deviceId[2] = (accesssAddress >> 8) & 0xFF;
+    fskPacketData.deviceId[3] = accesssAddress & 0xFF;
+    fskPacketData.deviceId[4] = 0x01;
+    fskPacketData.deviceId[5] = 0x02;
+
+    // Skip Header Byte and MAC Address
+    uint8_t startIndex = 8;
+
+    int i;
+
+    for (i = 0; i < 20; i++) {
+        fskPacketData.data[i] = 0x01;
     }
 
-    // process_bits();
+    fskPacketData.dataLen = i;
 
-    // Update the status.
-    samples_processed += buffer.count;
+    FskPacketMessage data_message{&fskPacketData};
 
-    if (samples_processed >= stat_update_threshold) {
-        // send_packet(data);
-        samples_processed -= stat_update_threshold;
+    shared_memory.application_queue.push(data_message);
+
+//----------------------------------------
+
+
+    parseState = Parse_State_Begin;
+    
+
+   // parseState = Parse_State_PDU_Header;
+}
+
+void FSKRxProcessor::handlePDUHeaderState() {
+    int num_demod_byte = 2;  // PDU header has 2 octets
+
+    symbols_eaten += 8 * num_demod_byte * SAMPLE_PER_SYMBOL;
+
+    if (symbols_eaten > (int)dst_buffer.count) {
+        return;
+    }
+
+    // Jump back down to the beginning of PDU header.
+    sample_idx = symbols_eaten - (8 * num_demod_byte * SAMPLE_PER_SYMBOL);
+
+    packet_index = 0;
+
+    for (int i = 0; i < num_demod_byte; i++) {
+        rb_buf[packet_index] = 0;
+
+        for (int j = 0; j < 8; j++) {
+            int I0 = dst_buffer.p[sample_idx].real();
+            int Q0 = dst_buffer.p[sample_idx].imag();
+            int I1 = dst_buffer.p[sample_idx + 1].real();
+            int Q1 = dst_buffer.p[sample_idx + 1].imag();
+
+            bit_decision = (I0 * Q1 - I1 * Q0) > 0 ? 1 : 0;
+            rb_buf[packet_index] = rb_buf[packet_index] | (bit_decision << j);
+
+            sample_idx += SAMPLE_PER_SYMBOL;
+        }
+
+        packet_index++;
+    }
+
+    parseState = Parse_State_PDU_Payload;
+}
+
+void FSKRxProcessor::handlePDUPayloadState() {
+    int i;
+    int num_demod_byte = (payload_len + 3);
+    symbols_eaten += 8 * num_demod_byte * SAMPLE_PER_SYMBOL;
+
+    if (symbols_eaten > (int)dst_buffer.count) {
+        return;
+    }
+
+    for (i = 0; i < num_demod_byte; i++) {
+        rb_buf[packet_index] = 0;
+
+        for (int j = 0; j < 8; j++) {
+            int I0 = dst_buffer.p[sample_idx].real();
+            int Q0 = dst_buffer.p[sample_idx].imag();
+            int I1 = dst_buffer.p[sample_idx + 1].real();
+            int Q1 = dst_buffer.p[sample_idx + 1].imag();
+
+            bit_decision = (I0 * Q1 - I1 * Q0) > 0 ? 1 : 0;
+            rb_buf[packet_index] = rb_buf[packet_index] | (bit_decision << j);
+
+            sample_idx += SAMPLE_PER_SYMBOL;
+        }
+
+        packet_index++;
+    }
+
+    // This should be the flag that determines if the data should be sent to the application layer.
+    bool sendPacket = true;
+
+    if (sendPacket) {
+        fskPacketData.max_dB = max_dB;
+
+        fskPacketData.type = pdu_type;
+        fskPacketData.size = payload_len;
+
+        fskPacketData.deviceId[0] = rb_buf[7];
+        fskPacketData.deviceId[1] = rb_buf[6];
+        fskPacketData.deviceId[2] = rb_buf[5];
+        fskPacketData.deviceId[3] = rb_buf[4];
+        fskPacketData.deviceId[4] = rb_buf[3];
+        fskPacketData.deviceId[5] = rb_buf[2];
+
+        // Skip Header Byte and MAC Address
+        uint8_t startIndex = 8;
+
+        for (i = 0; i < payload_len - 6; i++) {
+            fskPacketData.data[i] = rb_buf[startIndex++];
+        }
+
+        fskPacketData.dataLen = i;
+
+        FskPacketMessage data_message{&fskPacketData};
+
+        shared_memory.application_queue.push(data_message);
+    }
+
+    parseState = Parse_State_Begin;
+}
+
+void FSKRxProcessor::execute(const buffer_c8_t& buffer) {
+    if (!configured) return;
+
+    // Pulled this implementation from channel_stats_collector.c to time slice a specific packet's dB.
+    uint32_t max_squared = 0;
+
+    void* src_p = buffer.p;
+
+    while (src_p < &buffer.p[buffer.count]) {
+        const uint32_t sample = *__SIMD32(src_p)++;
+        const uint32_t mag_sq = __SMUAD(sample, sample);
+        if (mag_sq > max_squared) {
+            max_squared = mag_sq;
+        }
+    }
+
+    const float max_squared_f = max_squared;
+    max_dB = mag2_to_dbv_norm(max_squared_f * (1.0f / (32768.0f * 32768.0f)));
+
+    // 4Mhz 2048 samples
+    // Decimated by 4 to achieve 2048/4 = 512 samples at 1 sample per symbol.
+    decim_0.execute(buffer, dst_buffer);
+    feed_channel_stats(dst_buffer);
+
+    symbols_eaten = 0;
+
+    // Handle parsing based on parseState
+    if (parseState == Parse_State_Begin) {
+        handleBeginState();
+    }
+
+    if (parseState == Parse_State_PDU_Header) {
+        handlePDUHeaderState();
+    }
+
+    if (parseState == Parse_State_PDU_Payload) {
+        handlePDUPayloadState();
     }
 }
 
 void FSKRxProcessor::on_message(const Message* const message) {
-    switch (message->id) {
-        case Message::ID::FSKRxConfigure:
-            configure(*reinterpret_cast<const FSKRxConfigureMessage*>(message));
-            break;
-        case Message::ID::UpdateSpectrum:
-        case Message::ID::SpectrumStreamingConfig:
-            channel_spectrum.on_message(message);
-            break;
-
-        case Message::ID::SampleRateConfig:
-            sample_rate_config(*reinterpret_cast<const SampleRateConfigMessage*>(message));
-            break;
-
-        case Message::ID::CaptureConfig:
-            capture_config(*reinterpret_cast<const CaptureConfigMessage*>(message));
-            break;
-
-        default:
-            break;
-    }
+    if (message->id == Message::ID::FSKRxConfigure)
+        configure(*reinterpret_cast<const FSKRxConfigureMessage*>(message));
 }
 
 void FSKRxProcessor::configure(const FSKRxConfigureMessage& message) {
-    // Extract message variables.
-    deviation = message.deviation;
-    channel_decimation = message.channel_decimation;
-    // channel_filter_taps = message.channel_filter;
+    channel_number = message.deviation;
+    decim_0.configure(taps_BTLE_1M_PHY_decim_0.taps);
 
-    channel_spectrum.set_decimation_factor(1);
-}
-
-void FSKRxProcessor::capture_config(const CaptureConfigMessage& message) {
-    if (message.config) {
-        audio_output.set_stream(std::make_unique<StreamInput>(message.config));
-    } else {
-        audio_output.set_stream(nullptr);
-    }
-}
-
-void FSKRxProcessor::sample_rate_config(const SampleRateConfigMessage& message) {
-    const auto sample_rate = message.sample_rate;
-
-    // The actual sample rate is the requested rate * the oversample rate.
-    // See oversample.hpp for more details on oversampling.
-    baseband_fs = sample_rate * toUType(message.oversample_rate);
-    baseband_thread.set_sampling_rate(baseband_fs);
-
-    // TODO: Do we need to use the taps that the decimators get configured with?
-    channel_filter_low_f = taps_200k_decim_1.low_frequency_normalized * sample_rate;
-    channel_filter_high_f = taps_200k_decim_1.high_frequency_normalized * sample_rate;
-    channel_filter_transition = taps_200k_decim_1.transition_normalized * sample_rate;
-
-    // Compute the scalar that corrects the oversample_rate to be x8 when computing
-    // the spectrum update interval. The original implementation only supported x8.
-    // TODO: Why is this needed here but not in proc_replay? There must be some other
-    // assumption about x8 oversampling in some component that makes this necessary.
-    const auto oversample_correction = toUType(message.oversample_rate) / 8.0;
-
-    // The spectrum update interval controls how often the waterfall is fed new samples.
-    spectrum_interval_samples = sample_rate / (spectrum_rate_hz * oversample_correction);
-    spectrum_samples = 0;
-
-    // For high sample rates, the M4 is busy collecting samples so the
-    // waterfall runs slower. Reduce the update interval so it runs faster.
-    // NB: Trade off: looks nicer, but more frequent updates == more CPU.
-    if (sample_rate >= 1'500'000)
-        spectrum_interval_samples /= (sample_rate / 750'000);
-
-    switch (message.oversample_rate) {
-        case OversampleRate::x4:
-            // M4 can't handle 2 decimation passes for sample rates needing x4.
-            decim_0.set<FIRC8xR16x24FS4Decim4>().configure(taps_200k_decim_0.taps);
-            decim_1.set<NoopDecim>();
-            break;
-
-        case OversampleRate::x8:
-            // M4 can't handle 2 decimation passes for sample rates <= 600k.
-            if (message.sample_rate < 600'000) {
-                decim_0.set<FIRC8xR16x24FS4Decim4>().configure(taps_200k_decim_0.taps);
-                decim_1.set<FIRC16xR16x16Decim2>().configure(taps_200k_decim_1.taps);
-            } else {
-                // Using 180k taps to provide better filtering with a single pass.
-                decim_0.set<FIRC8xR16x24FS4Decim8>().configure(taps_180k_wfm_decim_0.taps);
-                decim_1.set<NoopDecim>();
-            }
-            break;
-
-        case OversampleRate::x16:
-            decim_0.set<FIRC8xR16x24FS4Decim8>().configure(taps_200k_decim_0.taps);
-            decim_1.set<FIRC16xR16x16Decim2>().configure(taps_200k_decim_1.taps);
-            break;
-
-        case OversampleRate::x32:
-            decim_0.set<FIRC8xR16x24FS4Decim4>().configure(taps_200k_decim_0.taps);
-            decim_1.set<FIRC16xR16x32Decim8>().configure(taps_16k0_decim_1.taps);
-            break;
-
-        case OversampleRate::x64:
-            decim_0.set<FIRC8xR16x24FS4Decim8>().configure(taps_200k_decim_0.taps);
-            decim_1.set<FIRC16xR16x32Decim8>().configure(taps_16k0_decim_1.taps);
-            break;
-
-        default:
-            chDbgPanic("Unhandled OversampleRate");
-            break;
-    }
-
-    // Update demodulator based on new decimation. Todo: Confirm this works.
-    size_t decim_0_input_fs = baseband_fs;
-    size_t decim_0_output_fs = decim_0_input_fs / decim_0.decimation_factor();
-
-    size_t decim_1_input_fs = decim_0_output_fs;
-    size_t decim_1_output_fs = decim_1_input_fs / decim_1.decimation_factor();
-
-    // size_t channel_filter_input_fs = decim_1_output_fs;
-    // size_t channel_filter_output_fs = channel_filter_input_fs / channel_decimation;
-
-    size_t demod_input_fs = decim_1_output_fs;
-
-    send_packet((uint32_t)demod_input_fs);
-
-    // Set ready to process data.
     configured = true;
 }
-
-void FSKRxProcessor::flush() {
-    // word_extractor.flush();
-}
-
-void FSKRxProcessor::reset() {
-    clear_data_bits();
-    has_sync_ = false;
-    inverted = false;
-    word_count = 0;
-
-    samples_processed = 0;
-}
-
-void FSKRxProcessor::send_packet(uint32_t data) {
-    data_message.is_data = true;
-    data_message.value = data;
-    shared_memory.application_queue.push(data_message);
-}
-
-/* main **************************************************/
 
 int main() {
     EventDispatcher event_dispatcher{std::make_unique<FSKRxProcessor>()};

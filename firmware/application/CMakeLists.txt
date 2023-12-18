@@ -250,6 +250,7 @@ set(CPPSRC
 	apps/ble_tx_app.cpp
 	apps/capture_app.cpp
 	apps/ert_app.cpp
+	apps/fsk_rx_app.cpp
 	apps/gps_sim_app.cpp
 	# apps/lge_app.cpp
 	apps/pocsag_app.cpp
@@ -271,7 +272,6 @@ set(CPPSRC
 	apps/ui_fileman.cpp
 	apps/ui_flash_utility.cpp
 	apps/ui_freqman.cpp
-	apps/ui_fsk_rx.cpp
 	apps/ui_iq_trim.cpp
 	apps/ui_jammer.cpp
     # apps/ui_keyfob.cpp

@@ -117,6 +117,7 @@ class Message {
         BTLETxConfigure = 59,
         WeatherRxConfigure = 60,
         WeatherData = 61,
+        FskPacket = 62,
         MAX
     };
 
@@ -445,6 +446,26 @@ class BLEPacketMessage : public Message {
     }
 
     BlePacketData* packet{nullptr};
+};
+
+struct FskPacketData {
+    int max_dB;
+    uint8_t type;
+    uint8_t size;
+    uint8_t deviceId[8];
+    uint8_t data[256];
+    uint8_t dataLen;
+};
+
+class FskPacketMessage : public Message {
+   public:
+    constexpr FskPacketMessage(
+        FskPacketData* packet)
+        : Message{ID::FskPacket},
+          packet{packet} {
+    }
+
+    FskPacketData* packet{nullptr};
 };
 
 class CodedSquelchMessage : public Message {
@@ -1073,23 +1094,11 @@ class FSKConfigureMessage : public Message {
 class FSKRxConfigureMessage : public Message {
    public:
     constexpr FSKRxConfigureMessage(
-        const fir_taps_real<24> decim_0_filter,
-        const fir_taps_real<32> decim_1_filter,
-        const fir_taps_real<32> channel_filter,
-        const size_t channel_decimation,
         const size_t deviation)
         : Message{ID::FSKRxConfigure},
-          decim_0_filter(decim_0_filter),
-          decim_1_filter(decim_1_filter),
-          channel_filter(channel_filter),
-          channel_decimation{channel_decimation},
           deviation{deviation} {
     }
 
-    const fir_taps_real<24> decim_0_filter;
-    const fir_taps_real<32> decim_1_filter;
-    const fir_taps_real<32> channel_filter;
-    const size_t channel_decimation;
     const size_t deviation;
 };
 

@@ -45,7 +45,6 @@
 #include "ui_flash_utility.hpp"
 #include "ui_font_fixed_8x16.hpp"
 #include "ui_freqman.hpp"
-#include "ui_fsk_rx.hpp"
 #include "ui_iq_trim.hpp"
 #include "ui_jammer.hpp"
 // #include "ui_keyfob.hpp"
@@ -92,6 +91,7 @@
 #include "ble_tx_app.hpp"
 #include "capture_app.hpp"
 #include "ert_app.hpp"
+#include "fsk_rx_app.hpp"
 #include "gps_sim_app.hpp"
 // #include "lge_app.hpp" //moved to ext
 #include "pocsag_app.hpp"
@@ -567,7 +567,7 @@ ReceiversMenuView::ReceiversMenuView(NavigationView& nav) {
         {"Search", Color::yellow(), &bitmap_icon_search, [&nav]() { nav.push<SearchView>(); }},
         {"TPMS Cars", Color::green(), &bitmap_icon_tpms, [&nav]() { nav.push<TPMSAppView>(); }},
         {"Weather", Color::green(), &bitmap_icon_thermometer, [&nav]() { nav.push<WeatherView>(); }},
-        // {"FSK RX", Color::yellow(), &bitmap_icon_remote, [&nav]() { nav.push<FskxRxMainView>(); }},
+        {"FSK RX", Color::orange(), &bitmap_icon_remote, [&nav]() { nav.push<FskRxView>(); }},
         // {"DMR", Color::dark_grey(), &bitmap_icon_dmr, [&nav](){ nav.push<NotImplementedView>(); }},
         // {"SIGFOX", Color::dark_grey(), &bitmap_icon_fox, [&nav](){ nav.push<NotImplementedView>(); }},
         // {"LoRa", Color::dark_grey(), &bitmap_icon_lora, [&nav](){ nav.push<NotImplementedView>(); }},
