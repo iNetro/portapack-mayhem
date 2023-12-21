@@ -33,6 +33,7 @@
 #include "radio_state.hpp"
 #include "log_file.hpp"
 #include "utility.hpp"
+#include "usb_serial_thread.hpp"
 
 #include "recent_entries.hpp"
 
@@ -116,8 +117,8 @@ class FskRxView : public View {
     NavigationView& nav_;
     RxRadioState radio_state_{
         902'075'000 /* frequency */,
-        100000 /* bandwidth */,
-        100000 /* sampling rate */,
+        90000 /* bandwidth */,
+        90000 /* sampling rate */,
         ReceiverModel::Mode::WidebandFMAudio};
 
     uint8_t channel_index{0};
@@ -231,8 +232,11 @@ class FskRxView : public View {
         {{5 * 8, 6 * 8}, "Found:", Color::light_grey()}};
 
     Text text_found_count{
-        {11 * 8, 3 * 16, 20 * 8, 16},
+        {11 * 8, 3 * 16, 4 * 8, 16},
         "0/0"};
+
+    FrequencyField sample_rate_frequency{
+        {18 * 8, 3 * 16}};
 
     Console console{
         {0, 4 * 16, 240, 240}};
@@ -262,6 +266,8 @@ class FskRxView : public View {
     }};
 
     FskRecentEntriesView recent_entries_view{columns, recent};
+
+    std::unique_ptr<UsbSerialThread> usb_serial_thread{};
 
     MessageHandlerRegistration message_handler_packet{
         Message::ID::FskPacket,

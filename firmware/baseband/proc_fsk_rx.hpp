@@ -43,9 +43,10 @@ class FSKRxProcessor : public BasebandProcessor {
     void on_message(const Message* const message) override;
 
    private:
-    static constexpr int SAMPLE_PER_SYMBOL{3};
+    static constexpr int SAMPLE_PER_SYMBOL{1};
     static constexpr int LEN_DEMOD_BUF_ACCESS{32};
-    static constexpr uint32_t DEFAULT_ACCESS_ADDR{0x84B3E374};
+    static constexpr uint32_t SYNC_BYTE_FSK{0x84B3E374};
+    static constexpr uint32_t SYNC_BYTE_BLE{0x8E89BED6};
     static constexpr int NUM_ACCESS_ADDR_BYTE{4};
 
     enum Parse_State {
@@ -56,11 +57,13 @@ class FSKRxProcessor : public BasebandProcessor {
 
     int checksumReceived = 0;
 
-    static constexpr size_t baseband_fs = 100000;
-    static constexpr size_t audio_fs = baseband_fs / 8 / 8 / 2;
+    size_t baseband_fs = 32000;
 
     uint32_t crc_initalVale = 0x555555;
     uint32_t crc_init_internal = 0x00;
+
+    uint8_t getBitAtIndex(uint32_t value, int index);
+    bool checkSync(uint32_t syncByte, uint8_t* demod_sync_byte, int startIndex);
 
     void handleBeginState();
     void handlePDUHeaderState();
@@ -88,6 +91,7 @@ class FSKRxProcessor : public BasebandProcessor {
 
     Parse_State parseState{Parse_State_Begin};
     uint16_t packet_index{0};
+    int phase_idx{0};
     int sample_idx{0};
     int symbols_eaten{0};
     uint8_t bit_decision{0};
@@ -95,11 +99,14 @@ class FSKRxProcessor : public BasebandProcessor {
     uint8_t pdu_type{0};
     int32_t max_dB{0};
 
+    uint32_t syncByte = 0;
+
     /* NB: Threads should be the last members in the class definition. */
     BasebandThread baseband_thread{baseband_fs, this, baseband::Direction::Receive};
     RSSIThread rssi_thread{};
 
     void configure(const FSKRxConfigureMessage& message);
+    void sample_rate_config(const SampleRateConfigMessage& message);
 };
 
 #endif /*__PROC_BTLERX_H__*/

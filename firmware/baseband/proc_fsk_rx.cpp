@@ -27,21 +27,35 @@
 
 #include "event_m4.hpp"
 
+uint8_t FSKRxProcessor::getBitAtIndex(uint32_t value, int index) {
+    if (index >= 0 && index < 32) {
+        return (value >> index) & 0x01;
+    } else {
+        return 0;
+    }
+}
+
+bool FSKRxProcessor::checkSync(uint32_t findSync, uint8_t* demod_sync_byte, int startIndex) {
+    bool unequal_flag = false;
+
+    for (int p = 0; p < LEN_DEMOD_BUF_ACCESS; p++) {
+        if (demod_sync_byte[startIndex] != getBitAtIndex(findSync, p)) {
+            unequal_flag = true;
+            break;
+        }
+        
+        syncByte = (syncByte & (~(1U << p))) | (demod_sync_byte[startIndex] << p);
+        
+        startIndex = ((startIndex + 1) & (LEN_DEMOD_BUF_ACCESS - 1));
+    }
+
+    return unequal_flag;
+}
+
 void FSKRxProcessor::handleBeginState() {
     int num_symbol_left = dst_buffer.count / SAMPLE_PER_SYMBOL;  // One buffer sample consist of I and Q.
 
     static uint8_t demod_buf_access[SAMPLE_PER_SYMBOL][LEN_DEMOD_BUF_ACCESS];
-
-    uint32_t uint32_tmp = DEFAULT_ACCESS_ADDR;
-    uint8_t accessAddrBits[LEN_DEMOD_BUF_ACCESS];
-
-    uint32_t accesssAddress = 0;
-
-    // Filling up addressBits with the access address we are looking to find.
-    for (int i = 0; i < 32; i++) {
-        accessAddrBits[i] = 0x01 & uint32_tmp;
-        uint32_tmp = (uint32_tmp >> 1);
-    }
 
     const int demod_buf_len = LEN_DEMOD_BUF_ACCESS;  // For AA
     int demod_buf_offset = 0;
@@ -60,26 +74,12 @@ void FSKRxProcessor::handleBeginState() {
             int I1 = dst_buffer.p[i + j + 1].real();
             int Q1 = dst_buffer.p[i + j + 1].imag();
 
-            int phase_idx = j;
+            phase_idx = j;
 
             demod_buf_access[phase_idx][demod_buf_offset] = (I0 * Q1 - I1 * Q0) > 0 ? 1 : 0;
 
-            int k = sp;
-            unequal_flag = false;
-
-            accesssAddress = 0;
-
-            for (int p = 0; p < demod_buf_len; p++) {
-                if (demod_buf_access[phase_idx][k] != accessAddrBits[p]) {
-                    unequal_flag = true;
-                    hit_idx = (-1);
-                    break;
-                }
-
-                accesssAddress = (accesssAddress & (~(1 << p))) | (demod_buf_access[phase_idx][k] << p);
-
-                k = ((k + 1) & (demod_buf_len - 1));
-            }
+            syncByte = 0;
+            unequal_flag = checkSync(SYNC_BYTE_BLE, demod_buf_access[phase_idx], sp);
 
             if (unequal_flag == false) {
                 hit_idx = (i + j - (demod_buf_len - 1) * SAMPLE_PER_SYMBOL);
@@ -111,15 +111,12 @@ void FSKRxProcessor::handleBeginState() {
     fskPacketData.type = 0;
     fskPacketData.size = 31;
 
-    fskPacketData.deviceId[0] = (accesssAddress >> 24) & 0xFF;
-    fskPacketData.deviceId[1] = (accesssAddress >> 16) & 0xFF;
-    fskPacketData.deviceId[2] = (accesssAddress >> 8) & 0xFF;
-    fskPacketData.deviceId[3] = accesssAddress & 0xFF;
+    fskPacketData.deviceId[0] = (syncByte >> 24) & 0xFF;
+    fskPacketData.deviceId[1] = (syncByte >> 16) & 0xFF;
+    fskPacketData.deviceId[2] = (syncByte >> 8) & 0xFF;
+    fskPacketData.deviceId[3] = syncByte & 0xFF;
     fskPacketData.deviceId[4] = 0x01;
     fskPacketData.deviceId[5] = 0x02;
-
-    // Skip Header Byte and MAC Address
-    uint8_t startIndex = 8;
 
     int i;
 
@@ -131,10 +128,12 @@ void FSKRxProcessor::handleBeginState() {
 
     FskPacketMessage data_message{&fskPacketData};
 
-    shared_memory.application_queue.push(data_message);
+    if (syncByte > 0xFF)
+    {
+        shared_memory.application_queue.push(data_message);
+    }
 
 //----------------------------------------
-
 
     parseState = Parse_State_Begin;
     
@@ -278,8 +277,14 @@ void FSKRxProcessor::execute(const buffer_c8_t& buffer) {
 }
 
 void FSKRxProcessor::on_message(const Message* const message) {
-    if (message->id == Message::ID::FSKRxConfigure)
-        configure(*reinterpret_cast<const FSKRxConfigureMessage*>(message));
+
+    switch (message->id) {
+        case Message::ID::FSKRxConfigure:
+            configure(*reinterpret_cast<const FSKRxConfigureMessage*>(message));
+            break;
+        default:
+            break;
+    }
 }
 
 void FSKRxProcessor::configure(const FSKRxConfigureMessage& message) {

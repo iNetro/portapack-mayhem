@@ -128,12 +128,24 @@ FskRxView::FskRxView(NavigationView& nav)
                   &options_sort,
                   &label_found,
                   &text_found_count,
+                  &sample_rate_frequency,
                   &button_filter,
                   &button_clear_list,
                   &button_switch,
                   &recent_entries_view});
 
     filterBuffer = filter;
+
+    sample_rate_frequency.on_change = [this](rf::Frequency f) {
+        int64_t sample_frequency = f;
+        receiver_model.set_sampling_rate(sample_frequency);
+        receiver_model.set_baseband_bandwidth(sample_frequency);
+    };
+
+    sample_rate_frequency.set_value(32000);
+    sample_rate_frequency.set_step(100);
+
+    usb_serial_thread = std::make_unique<UsbSerialThread>();
 
     button_filter.on_select = [this](Button&) {
         text_prompt(
@@ -188,7 +200,7 @@ FskRxView::FskRxView(NavigationView& nav)
         field_frequency.set_value(get_freq_by_channel_number(v));
         channel_number = v;
 
-        baseband::set_fsk(channel_number);
+        //baseband::set_fsk(channel_number);
     };
 
     options_sort.on_change = [this](size_t index, int32_t v) {
@@ -227,8 +239,7 @@ void FskRxView::on_data(FskPacketData* packet) {
     str_console += " Len:";
     str_console += to_string_dec_uint(packet->size);
 
-    str_console += "\n";
-    str_console += "Data:";
+    str_console += " Data:";
 
     int i;
 
@@ -236,7 +247,9 @@ void FskRxView::on_data(FskPacketData* packet) {
         str_console += to_string_hex(packet->data[i], 2);
     }
 
-    str_console += "\n";
+    usb_serial_thread->serial_str = str_console + "\r\n";
+    usb_serial_thread->str_ready = true;
+    str_console = "";
 
     // uint64_t macAddressEncoded = 0;//copy_mac_address_to_uint64(packet->deviceId);
 
@@ -316,16 +329,6 @@ void FskRxView::on_file_changed(const std::filesystem::path& new_file_path) {
 void FskRxView::on_timer() {
     if (++timer_count == timer_period) {
         timer_count = 0;
-
-        if (auto_channel) {
-            int min = 37;
-            int max = 39;
-
-            int randomChannel = min + std::rand() % (max - min + 1);
-
-            field_frequency.set_value(get_freq_by_channel_number(randomChannel));
-            baseband::set_fsk(randomChannel);
-        }
     }
 }
 
