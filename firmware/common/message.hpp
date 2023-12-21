@@ -118,7 +118,7 @@ class Message {
         SubGhzFPRxConfigure = 60,
         WeatherData = 61,
         SubGhzDData = 62,
-        FskPacket = 62,
+        FskPacket = 63,
         MAX
     };
 
