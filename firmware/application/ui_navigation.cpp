@@ -46,9 +46,9 @@
 #include "ui_font_fixed_8x16.hpp"
 #include "ui_freqman.hpp"
 #include "ui_iq_trim.hpp"
-#include "ui_jammer.hpp"
-// #include "ui_keyfob.hpp"
-// #include "ui_lcr.hpp"
+// #include "ui_jammer.hpp" //moved to ext
+//  #include "ui_keyfob.hpp"
+//  #include "ui_lcr.hpp"
 #include "ui_level.hpp"
 #include "ui_looking_glass_app.hpp"
 #include "ui_mictx.hpp"
@@ -79,6 +79,7 @@
 #include "ui_touchtunes.hpp"
 #include "ui_view_wav.hpp"
 #include "ui_weatherstation.hpp"
+#include "ui_subghzd.hpp"
 #include "ui_whipcalc.hpp"
 #include "ui_external_items_menu_loader.hpp"
 
@@ -568,6 +569,7 @@ ReceiversMenuView::ReceiversMenuView(NavigationView& nav) {
         {"TPMS Cars", Color::green(), &bitmap_icon_tpms, [&nav]() { nav.push<TPMSAppView>(); }},
         {"Weather", Color::green(), &bitmap_icon_thermometer, [&nav]() { nav.push<WeatherView>(); }},
         {"FSK RX", Color::orange(), &bitmap_icon_remote, [&nav]() { nav.push<FskRxView>(); }},
+        {"SubGhzD", Color::yellow(), &bitmap_icon_remote, [&nav]() { nav.push<SubGhzDView>(); }},
         // {"DMR", Color::dark_grey(), &bitmap_icon_dmr, [&nav](){ nav.push<NotImplementedView>(); }},
         // {"SIGFOX", Color::dark_grey(), &bitmap_icon_fox, [&nav](){ nav.push<NotImplementedView>(); }},
         // {"LoRa", Color::dark_grey(), &bitmap_icon_lora, [&nav](){ nav.push<NotImplementedView>(); }},
@@ -593,7 +595,7 @@ TransmittersMenuView::TransmittersMenuView(NavigationView& nav) {
         {"BLE Tx", ui::Color::green(), &bitmap_icon_btle, [&nav]() { nav.push<BLETxView>(); }},
         // {"BurgerPgr", ui::Color::yellow(), &bitmap_icon_burger, [&nav]() { nav.push<CoasterPagerView>(); }}, //moved to ext
         {"GPS Sim", ui::Color::green(), &bitmap_icon_gps_sim, [&nav]() { nav.push<GpsSimAppView>(); }},
-        {"Jammer", ui::Color::green(), &bitmap_icon_jammer, [&nav]() { nav.push<JammerView>(); }},
+        //{"Jammer", ui::Color::green(), &bitmap_icon_jammer, [&nav]() { nav.push<JammerView>(); }}, //moved to ext
         // { "Key fob", ui::Color::orange(), &bitmap_icon_keyfob, [&nav](){ nav.push<KeyfobView>(); }},
         // {"LGE", ui::Color::yellow(), &bitmap_icon_lge, [&nav]() { nav.push<LGEView>(); }}, //moved to ext
         {"Morse", ui::Color::green(), &bitmap_icon_morse, [&nav]() { nav.push<MorseView>(); }},
