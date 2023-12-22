@@ -36,20 +36,33 @@ uint8_t FSKRxProcessor::getBitAtIndex(uint32_t value, int index) {
 }
 
 bool FSKRxProcessor::checkSync(uint32_t findSync, uint8_t* demod_sync_byte, int startIndex) {
-    bool unequal_flag = false;
+    uint8_t valid_count = 0;
 
-    for (int p = 0; p < LEN_DEMOD_BUF_ACCESS; p++) {
-        if (demod_sync_byte[startIndex] != getBitAtIndex(findSync, p)) {
-            unequal_flag = true;
-            break;
+    int p = 0;
+
+    for (p = 0; p < LEN_DEMOD_BUF_ACCESS; p += 8) {
+
+       int i = 0;
+
+        for (i = 0; i < 8; i++)
+        {
+            if (demod_sync_byte[startIndex] != getBitAtIndex(findSync, (p + i))) {
+                break;
+            }
+        
+            syncByte = (syncByte & (~(1U << (p + i)))) | (demod_sync_byte[startIndex] << (p + i));
+        
+            startIndex = ((startIndex + 1) & (LEN_DEMOD_BUF_ACCESS - 1));
         }
         
-        syncByte = (syncByte & (~(1U << p))) | (demod_sync_byte[startIndex] << p);
-        
-        startIndex = ((startIndex + 1) & (LEN_DEMOD_BUF_ACCESS - 1));
+        //Did we find a matching byte?
+        if (i == 8)
+        {
+            valid_count++;
+        }
     }
 
-    return unequal_flag;
+    return valid_count >= 3;
 }
 
 void FSKRxProcessor::handleBeginState() {
@@ -60,7 +73,7 @@ void FSKRxProcessor::handleBeginState() {
     const int demod_buf_len = LEN_DEMOD_BUF_ACCESS;  // For AA
     int demod_buf_offset = 0;
     int hit_idx = (-1);
-    bool unequal_flag = false;
+    uint8_t sync_valid_flag = 0;
 
     memset(demod_buf_access, 0, SAMPLE_PER_SYMBOL * demod_buf_len);
 
@@ -79,15 +92,21 @@ void FSKRxProcessor::handleBeginState() {
             demod_buf_access[phase_idx][demod_buf_offset] = (I0 * Q1 - I1 * Q0) > 0 ? 1 : 0;
 
             syncByte = 0;
-            unequal_flag = checkSync(SYNC_BYTE_BLE, demod_buf_access[phase_idx], sp);
 
-            if (unequal_flag == false) {
+            sync_valid_flag = checkSync(SYNC_BYTE_FSK, demod_buf_access[phase_idx], sp);
+
+            // if (!sync_valid_flag)
+            // {
+            //     sync_valid_flag = checkSync(SYNC_BYTE_FSK, demod_buf_access[phase_idx], sp);
+            // }
+
+            if (sync_valid_flag) {
                 hit_idx = (i + j - (demod_buf_len - 1) * SAMPLE_PER_SYMBOL);
                 break;
             }
         }
 
-        if (unequal_flag == false) {
+        if (sync_valid_flag) {
             break;
         }
 
