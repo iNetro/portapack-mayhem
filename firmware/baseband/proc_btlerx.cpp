@@ -123,30 +123,17 @@ int BTLERxProcessor::verify_payload_byte(int num_payload_byte, ADV_PDU_TYPE pdu_
 }
 
 void BTLERxProcessor::handleBeginState() {
-    int num_symbol_left = dst_buffer.count / SAMPLE_PER_SYMBOL;  // One buffer sample consist of I and Q.
+    int num_symbol_left = (dst_buffer.count / SAMPLE_PER_SYMBOL) - symbols_eaten;  // One buffer sample consist of I and Q.
+    sample_idx = symbols_eaten;
 
-    static uint8_t demod_buf_access[SAMPLE_PER_SYMBOL][LEN_DEMOD_BUF_ACCESS];
-
-    uint32_t uint32_tmp = DEFAULT_ACCESS_ADDR;
-    uint8_t accessAddrBits[LEN_DEMOD_BUF_ACCESS];
-
+    uint32_t validAccessAddress = DEFAULT_ACCESS_ADDR;
+    const int demod_buf_len = LEN_DEMOD_BUF_ACCESS;
     uint32_t accesssAddress = 0;
 
-    // Filling up addressBits with the access address we are looking to find.
-    for (int i = 0; i < 32; i++) {
-        accessAddrBits[i] = 0x01 & uint32_tmp;
-        uint32_tmp = (uint32_tmp >> 1);
-    }
-
-    const int demod_buf_len = LEN_DEMOD_BUF_ACCESS;  // For AA
-    int demod_buf_offset = 0;
     int hit_idx = (-1);
-    bool unequal_flag = false;
+    bool foundAccessAddress = false;
 
-    memset(demod_buf_access, 0, SAMPLE_PER_SYMBOL * demod_buf_len);
-
-    for (int i = 0; i < num_symbol_left * SAMPLE_PER_SYMBOL; i += SAMPLE_PER_SYMBOL) {
-        int sp = ((demod_buf_offset - demod_buf_len + 1) & (demod_buf_len - 1));
+    for (int i = sample_idx; i < num_symbol_left * SAMPLE_PER_SYMBOL; i += SAMPLE_PER_SYMBOL) {
 
         for (int j = 0; j < SAMPLE_PER_SYMBOL; j++) {
             // Sample and compare with the adjacent next sample.
@@ -155,42 +142,29 @@ void BTLERxProcessor::handleBeginState() {
             int I1 = dst_buffer.p[i + j + 1].real();
             int Q1 = dst_buffer.p[i + j + 1].imag();
 
-            int phase_idx = j;
 
-            demod_buf_access[phase_idx][demod_buf_offset] = (I0 * Q1 - I1 * Q0) > 0 ? 1 : 0;
+            bool bitDecision = (I0 * Q1 - I1 * Q0) > 0 ? 1 : 0;
 
-            int k = sp;
-            unequal_flag = false;
+            accesssAddress = (accesssAddress >> 1 | (bitDecision << 31));
 
-            accesssAddress = 0;
+            int errors = __builtin_popcount(accesssAddress ^ validAccessAddress) & 0xFFFFFFFF;
 
-            for (int p = 0; p < demod_buf_len; p++) {
-                if (demod_buf_access[phase_idx][k] != accessAddrBits[p]) {
-                    unequal_flag = true;
-                    hit_idx = (-1);
-                    break;
-                }
-
-                accesssAddress = (accesssAddress & (~(1 << p))) | (demod_buf_access[phase_idx][k] << p);
-
-                k = ((k + 1) & (demod_buf_len - 1));
-            }
-
-            if (unequal_flag == false) {
+            if (!errors)
+            {
                 hit_idx = (i + j - (demod_buf_len - 1) * SAMPLE_PER_SYMBOL);
+                foundAccessAddress = true;
                 break;
             }
         }
 
-        if (unequal_flag == false) {
+        if (foundAccessAddress) {
             break;
         }
-
-        demod_buf_offset = ((demod_buf_offset + 1) & (demod_buf_len - 1));
     }
 
     if (hit_idx == -1) {
         // Process more samples.
+        symbols_eaten = dst_buffer.count + 1;
         return;
     }
 
@@ -307,6 +281,9 @@ void BTLERxProcessor::handlePDUPayloadState() {
             blePacketData.macAddress[4] = rb_buf[3];
             blePacketData.macAddress[5] = rb_buf[2];
 
+            blePacketData.real = real;
+            blePacketData.imag = imag;
+
             // Skip Header Byte and MAC Address
             uint8_t startIndex = 8;
 
@@ -328,21 +305,27 @@ void BTLERxProcessor::handlePDUPayloadState() {
 void BTLERxProcessor::execute(const buffer_c8_t& buffer) {
     if (!configured) return;
 
-    // Pulled this implementation from channel_stats_collector.c to time slice a specific packet's dB.
-    uint32_t max_squared = 0;
+    max_dB = -128;
 
-    void* src_p = buffer.p;
+    real = -128;
+    imag = -128;
 
-    while (src_p < &buffer.p[buffer.count]) {
-        const uint32_t sample = *__SIMD32(src_p)++;
-        const uint32_t mag_sq = __SMUAD(sample, sample);
-        if (mag_sq > max_squared) {
-            max_squared = mag_sq;
+    auto* ptr = buffer.p;
+    auto* end = &buffer.p[buffer.count];
+    
+    while (ptr < end) 
+    {
+        float dbm = mag2_to_dbm_8bit_normalized(ptr->real(), ptr->imag(), 1.0f, 50.0f);
+
+        ptr++;
+        
+        if (dbm > max_dB) 
+        {
+            max_dB = dbm;
+            real = ptr->real();
+            imag = ptr->imag();
         }
     }
-
-    const float max_squared_f = max_squared;
-    max_dB = mag2_to_dbv_norm(max_squared_f * (1.0f / (32768.0f * 32768.0f)));
 
     // 4Mhz 2048 samples
     // Decimated by 4 to achieve 2048/4 = 512 samples at 1 sample per symbol.
@@ -351,17 +334,19 @@ void BTLERxProcessor::execute(const buffer_c8_t& buffer) {
 
     symbols_eaten = 0;
 
-    // Handle parsing based on parseState
-    if (parseState == Parse_State_Begin) {
-        handleBeginState();
-    }
+    while (symbols_eaten < (int)dst_buffer.count) {
+        // Handle parsing based on parseState
+        if (parseState == Parse_State_Begin) {
+            handleBeginState();
+        }
 
-    if (parseState == Parse_State_PDU_Header) {
-        handlePDUHeaderState();
-    }
+        if (parseState == Parse_State_PDU_Header) {
+            handlePDUHeaderState();
+        }
 
-    if (parseState == Parse_State_PDU_Payload) {
-        handlePDUPayloadState();
+        if (parseState == Parse_State_PDU_Payload) {
+            handlePDUPayloadState();
+        }
     }
 }
 
@@ -372,7 +357,7 @@ void BTLERxProcessor::on_message(const Message* const message) {
 
 void BTLERxProcessor::configure(const BTLERxConfigureMessage& message) {
     channel_number = message.channel_number;
-    decim_0.configure(taps_BTLE_1M_PHY_decim_0.taps);
+    decim_0.configure(taps_BTLE_2M_PHY_decim_0.taps);
 
     configured = true;
 

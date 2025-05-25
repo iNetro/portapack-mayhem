@@ -40,6 +40,8 @@
 
 #include "recent_entries.hpp"
 
+#define USE_FSK_RX 1
+
 class BLELogger {
    public:
     Optional<File::Error> append(const std::filesystem::path& filename) {
@@ -83,6 +85,7 @@ struct BleRecentEntry {
     std::string timestamp;
     std::string dataString;
     std::string nameString;
+    std::string versionString;
     bool include_name;
     uint16_t numHits;
     ADV_PDU_TYPE pduType;
@@ -101,6 +104,7 @@ struct BleRecentEntry {
           timestamp{},
           dataString{},
           nameString{},
+          versionString{},
           include_name{},
           numHits{},
           pduType{},
@@ -126,11 +130,11 @@ class BleRecentEntryDetailView : public View {
     void update_data();
     void focus() override;
     void paint(Painter&) override;
+    static BLETxPacket build_packet(BleRecentEntry entry_);
 
    private:
     NavigationView& nav_;
     BleRecentEntry entry_{};
-    BLETxPacket build_packet();
     void on_save_file(const std::string value, BLETxPacket packetToSave);
     bool saveFile(const std::filesystem::path& path, BLETxPacket packetToSave);
     std::string packetFileBuffer{};
@@ -198,6 +202,7 @@ class BLERxView : public View {
     bool saveFile(const std::filesystem::path& path);
     std::unique_ptr<UsbSerialThread> usb_serial_thread{};
     void on_data(BlePacketData* packetData);
+    void on_data_fsk(FskPacketData* packet);
     void on_filter_change(std::string value);
     void on_file_changed(const std::filesystem::path& new_file_path);
     void file_error();
@@ -205,13 +210,23 @@ class BLERxView : public View {
     void handle_entries_sort(uint8_t index);
     void handle_filter_options(uint8_t index);
     void updateEntry(const BlePacketData* packet, BleRecentEntry& entry, ADV_PDU_TYPE pdu_type);
+    void parse_beacon_data(const uint8_t* data, uint8_t length, std::string& nameString, std::string& versionString);
 
     NavigationView& nav_;
+
+    #if USE_FSK_RX   
+    RxRadioState radio_state_{
+        902073750 /* frequency */,
+        240000 /* bandwidth */,
+        240000 /* sampling rate */,
+        ReceiverModel::Mode::Capture};
+    #else
     RxRadioState radio_state_{
         2402000000 /* frequency */,
         4000000 /* bandwidth */,
         4000000 /* sampling rate */,
         ReceiverModel::Mode::WidebandFMAudio};
+    #endif
 
     uint8_t channel_index{0};
     uint8_t sort_index{0};
@@ -219,7 +234,6 @@ class BLERxView : public View {
     std::string filter{};
     bool logging{false};
     bool serial_logging{false};
-    bool async_tx_states_when_entered{false};
 
     bool name_enable{true};
     app_settings::SettingsManager settings_{
@@ -262,6 +276,28 @@ class BLERxView : public View {
     static constexpr auto header_height = 9 * 8;
     static constexpr auto switch_button_height = 3 * 16;
 
+    #if USE_FSK_RX
+    OptionsField options_channel{
+        {0 * 8, 0 * 8},
+        5,
+        {{"Ch.00", 0},
+         {"Ch.01", 1},
+         {"Ch.02", 2},
+         {"Ch.03", 3},
+         {"Ch.04", 4},
+         {"Ch.05", 5},
+         {"Ch.06", 6},
+         {"Ch.07", 7},
+         {"Ch.08", 8},
+         {"Ch.09", 9},
+         {"Ch.10", 10},
+         {"Ch.11", 11},
+         {"Ch.12", 12},
+         {"Ch.13", 13},
+         {"Ch.14", 14},
+         {"Ch.15", 15},
+         {"Auto", 40}}};
+    #else
     OptionsField options_channel{
         {0 * 8, 0 * 8},
         5,
@@ -269,6 +305,7 @@ class BLERxView : public View {
          {"Ch.38", 38},
          {"Ch.39", 39},
          {"Auto", 40}}};
+    #endif
 
     RxFrequencyField field_frequency{
         {6 * 8, 0 * 16},
@@ -341,18 +378,18 @@ class BLERxView : public View {
         true};
 
     // Console console{
-    //     {0, 10 * 8, screen_height, screen_height-80}};
+    //     {0, 10 * 8, 240, 240}};
 
     Button button_clear_list{
-        {2 * 8, screen_height - (16 + 32), 7 * 8, 32},
+        {2 * 8, 320 - (16 + 32), 7 * 8, 32},
         "Clear"};
 
     Button button_save_list{
-        {11 * 8, screen_height - (16 + 32), 11 * 8, 32},
+        {11 * 8, 320 - (16 + 32), 11 * 8, 32},
         "Export CSV"};
 
     Button button_switch{
-        {screen_width - 6 * 8, screen_height - (16 + 32), 4 * 8, 32},
+        {240 - 6 * 8, 320 - (16 + 32), 4 * 8, 32},
         "Tx"};
 
     std::string str_log{""};
@@ -362,9 +399,9 @@ class BLERxView : public View {
     BleRecentEntries tempList{};
 
     const RecentEntriesColumns columns{{
-        {"Mac Address", 17},
-        {"Hits", 7},
-        {"dB", 4},
+        {"Device ID", 10},
+        {"Version", 13},
+        {"dBm", 4},
     }};
 
     BleRecentEntriesView recent_entries_view{columns, recent};
@@ -374,6 +411,13 @@ class BLERxView : public View {
         [this](Message* const p) {
             const auto message = static_cast<const BLEPacketMessage*>(p);
             this->on_data(message->packet);
+        }};
+
+    MessageHandlerRegistration message_handler_packet_fsk{
+        Message::ID::FSKPacket,
+        [this](Message* const p) {
+            const auto message = static_cast<const FSKRxPacketMessage*>(p);
+            this->on_data_fsk(message->packet);
         }};
 
     MessageHandlerRegistration message_handler_frame_sync{

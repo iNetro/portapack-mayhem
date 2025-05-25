@@ -81,7 +81,6 @@ class BTLERxProcessor : public BasebandProcessor {
     };
 
     static constexpr size_t baseband_fs = 4000000;
-    static constexpr size_t audio_fs = baseband_fs / 8 / 8 / 2;
 
     uint_fast32_t crc_update(uint_fast32_t crc, const void* data, size_t data_len);
     uint_fast32_t crc24_byte(uint8_t* byte_in, int num_byte, uint32_t init_hex);
@@ -127,6 +126,8 @@ class BTLERxProcessor : public BasebandProcessor {
     uint8_t payload_len{0};
     uint8_t pdu_type{0};
     int32_t max_dB{0};
+    int8_t real{0};
+    int8_t imag{0};
 
     /* NB: Threads should be the last members in the class definition. */
     BasebandThread baseband_thread{baseband_fs, this, baseband::Direction::Receive};

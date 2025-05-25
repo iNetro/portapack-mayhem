@@ -134,6 +134,7 @@ class Message {
         NoaaAptRxConfigure = 77,
         NoaaAptRxStatusData = 78,
         NoaaAptRxImageData = 79,
+        FSKPacket = 80,
         MAX
     };
 
@@ -444,12 +445,23 @@ struct ADV_PDU_PAYLOAD_TYPE_5 {
 };
 
 struct BlePacketData {
+    int8_t real;
+    int8_t imag;
     int max_dB;
     uint8_t type;
     uint8_t size;
     uint8_t macAddress[6];
     uint8_t data[40];
     uint8_t dataLen;
+};
+
+struct FskPacketData {
+    int8_t real;
+    int8_t imag;
+    int max_dB;
+    uint8_t data[16];
+    uint8_t dataLen;
+    uint32_t syncWord;
 };
 
 class BLEPacketMessage : public Message {
@@ -462,6 +474,17 @@ class BLEPacketMessage : public Message {
 
     BlePacketData* packet{nullptr};
 };
+
+class FSKRxPacketMessage : public Message {
+    public:
+     constexpr FSKRxPacketMessage(
+        FskPacketData* packet)
+         : Message{ID::FSKPacket},
+           packet{packet} {
+     }
+ 
+     FskPacketData* packet{nullptr};
+ };
 
 class CodedSquelchMessage : public Message {
    public:
@@ -1131,13 +1154,15 @@ class FSKRxConfigureMessage : public Message {
         const fir_taps_real<32> decim_1_filter,
         const fir_taps_real<32> channel_filter,
         const size_t channel_decimation,
-        const size_t deviation)
+        const size_t deviation,
+        const uint8_t channel_number)
         : Message{ID::FSKRxConfigure},
           decim_0_filter(decim_0_filter),
           decim_1_filter(decim_1_filter),
           channel_filter(channel_filter),
           channel_decimation{channel_decimation},
-          deviation{deviation} {
+          deviation{deviation},
+          channel_number{channel_number} {
     }
 
     const fir_taps_real<24> decim_0_filter;
@@ -1145,6 +1170,7 @@ class FSKRxConfigureMessage : public Message {
     const fir_taps_real<32> channel_filter;
     const size_t channel_decimation;
     const size_t deviation;
+    const uint8_t channel_number;
 };
 
 class POCSAGConfigureMessage : public Message {
