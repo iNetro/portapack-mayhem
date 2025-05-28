@@ -838,6 +838,13 @@ void BLERxView::on_data_fsk(FskPacketData* packet) {
 
     str_console = to_string_hex(packet->syncWord) + " db: " + to_string_dec_int(packet->max_dB) + "\r\n";
 
+    for (int i = 0; i < packet->dataLen; i++)
+    {
+        str_console += to_string_hex(packet->data[i]) + " ";
+    }
+
+    str_console += "\r\n";
+
     if (serial_logging) {
         usb_serial_thread->serial_str = str_console;
         usb_serial_thread->str_ready = true;

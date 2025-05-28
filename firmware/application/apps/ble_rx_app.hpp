@@ -217,8 +217,8 @@ class BLERxView : public View {
     #if USE_FSK_RX   
     RxRadioState radio_state_{
         902073750 /* frequency */,
-        240000 /* bandwidth */,
-        240000 /* sampling rate */,
+        480000 /* bandwidth */,
+        480000 /* sampling rate */,
         ReceiverModel::Mode::Capture};
     #else
     RxRadioState radio_state_{

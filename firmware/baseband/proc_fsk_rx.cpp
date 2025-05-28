@@ -55,44 +55,53 @@
  
  void FSKRxProcessor::handleBeginState(const buffer_c16_t &decimator_out) {
      int num_symbol_left = decimator_out.count / SAMPLE_PER_SYMBOL;  // One buffer sample consist of I and Q.
-     sample_idx = symbols_eaten;
 
      uint32_t validSyncWord = DEFAULT_SYNC_WORD;
      const int demod_buf_len = LEN_DEMOD_BUF_SYNC_WORD;
-     uint32_t syncWordValue = 0;
+
+     static uint32_t syncWordValue = 0;
+     static uint8_t syncError = 0;
  
      int hit_idx = (-1);
      bool foundSyncWord = false;
 
-     for (int i = sample_idx; i < num_symbol_left * SAMPLE_PER_SYMBOL; i += SAMPLE_PER_SYMBOL) {
+     for (int i = 0; i < num_symbol_left * SAMPLE_PER_SYMBOL; i += SAMPLE_PER_SYMBOL) {
 
-        for (int j = 0; j < SAMPLE_PER_SYMBOL; j++) {
+        int phaseSum = 0;
+        int j = 0;
+
+        for (j = 0; j < SAMPLE_PER_SYMBOL - 1; j++) {
             // Sample and compare with the adjacent next sample.
             int I0 = dst_buffer.p[i + j].real();
             int Q0 = dst_buffer.p[i + j].imag();
             int I1 = dst_buffer.p[i + j + 1].real();
             int Q1 = dst_buffer.p[i + j + 1].imag();
 
+            int phaseDiff = (I0 * Q1 - I1 * Q0);  // Positive = one direction, negative = the other
+            phaseSum += phaseDiff;
+        }
 
-            bool bitDecision = (I0 * Q1 - I1 * Q0) > 0 ? 1 : 0;
+        bool bitDecision = (phaseSum > 0);
 
-            syncWordValue = syncWordValue << 1 | bitDecision;
+        syncWordValue = syncWordValue << 1 | bitDecision;
 
-            int errors = __builtin_popcount(syncWordValue ^ validSyncWord) & 0xFFFFFFFF;
+        int errors = __builtin_popcount(syncWordValue ^ validSyncWord) & 0xFFFFFFFF;
 
-            if (errors < 2)
-            {
-                hit_idx = (i + j - (demod_buf_len - 1) * SAMPLE_PER_SYMBOL);
-                foundSyncWord = true;
+        if (errors == 0)
+        {
+            hit_idx = i;
+            foundSyncWord = true;
 
-                fskPacketData.syncWord = syncWordValue;
-                fskPacketData.max_dB = max_dB;
+            fskPacketData.syncWord = syncWordValue;
+            fskPacketData.max_dB = max_dB;
 
-                FSKRxPacketMessage data_message{&fskPacketData};
-                shared_memory.application_queue.push(data_message);
+            // FSKRxPacketMessage data_message{&fskPacketData};
+            // shared_memory.application_queue.push(data_message);
 
-                break;
-            }
+            syncWordValue = 0;
+            syncError = 0;
+
+            break;
         }
 
         if (foundSyncWord) {
@@ -101,84 +110,83 @@
     }
 
     if (hit_idx == -1) {
-        // Process more samples.
-        symbols_eaten = dst_buffer.count + 1;
+ 
+        syncError++;
+
+        if (syncError == 4)
+        {
+            syncWordValue = 0;
+            syncError = 0;
+        }
+
         return;
     }
 
-     symbols_eaten += hit_idx;
- 
-     symbols_eaten += (8 * NUM_SYNC_WORD_BYTE * SAMPLE_PER_SYMBOL);  // move to the beginning of PDU header
- 
-     num_symbol_left = num_symbol_left - symbols_eaten;
- 
-     parseState = Parse_State_PDU_Header;
- }
- 
- void FSKRxProcessor::handlePDUHeaderState(const buffer_c16_t &decimator_out) {
-     int num_demod_byte = 2;  // PDU header has 2 octets
- 
-     symbols_eaten += 8 * num_demod_byte * SAMPLE_PER_SYMBOL;
- 
-     if (symbols_eaten > (int)decimator_out.count) {
-         return;
-     }
- 
-     // Jump back down to the beginning of PDU header.
-     sample_idx = symbols_eaten - (8 * num_demod_byte * SAMPLE_PER_SYMBOL);
- 
-     packet_index = 0;
- 
-     for (int i = 0; i < num_demod_byte; i++) {
-         rb_buf[packet_index] = 0;
- 
-         for (int j = 0; j < 8; j++) {
-             int I0 = decimator_out.p[sample_idx].real();
-             int Q0 = decimator_out.p[sample_idx].imag();
-             int I1 = decimator_out.p[sample_idx + 1].real();
-             int Q1 = decimator_out.p[sample_idx + 1].imag();
- 
-             bit_decision = (I0 * Q1 - I1 * Q0) > 0 ? 1 : 0;
-             rb_buf[packet_index] = rb_buf[packet_index] | (bit_decision << j);
- 
-             sample_idx += SAMPLE_PER_SYMBOL;
-         }
- 
-         packet_index++;
-     }
-
-     parseState = Parse_State_Begin;
+     samples_eaten = hit_idx + SAMPLE_PER_SYMBOL;
+     parseState = Parse_State_PDU_Payload;
  }
  
  void FSKRxProcessor::handlePDUPayloadState(const buffer_c16_t &decimator_out) {
-     int i;
-     int num_demod_byte = (payload_len + 3);
-     symbols_eaten += 8 * num_demod_byte * SAMPLE_PER_SYMBOL;
+     int num_demod_byte = 10;
+     int num_samples_left = decimator_out.count - samples_eaten; 
+     
+     sample_idx = samples_eaten;
+
+     static uint8_t packet_index = 0;
+     static uint8_t bit_index = 0;
  
-     if (symbols_eaten > (int)decimator_out.count) {
-         return;
-     }
+     for (packet_index; packet_index < num_demod_byte; packet_index++) {
+
+         for (bit_index; bit_index < 8; bit_index++) 
+         {
+            int phaseSum = 0;
+            int k = 0;
+
+            for (k = 0; k < SAMPLE_PER_SYMBOL - 1; k++) {
+                // Sample and compare with the adjacent next sample.
+                int I0 = dst_buffer.p[sample_idx + k].real();
+                int Q0 = dst_buffer.p[sample_idx + k].imag();
+                int I1 = dst_buffer.p[sample_idx + k + 1].real();
+                int Q1 = dst_buffer.p[sample_idx + k + 1].imag();
+
+                int phaseDiff = (I0 * Q1 - I1 * Q0);  // Positive = one direction, negative = the other
+                phaseSum += phaseDiff;
+            }
+
+            bool bitDecision = (phaseSum > 0);
+
+            rb_buf[packet_index] = rb_buf[packet_index] | (bitDecision << (7 - bit_index));
  
-     for (i = 0; i < num_demod_byte; i++) {
-         rb_buf[packet_index] = 0;
- 
-         for (int j = 0; j < 8; j++) {
-             int I0 = decimator_out.p[sample_idx].real();
-             int Q0 = decimator_out.p[sample_idx].imag();
-             int I1 = decimator_out.p[sample_idx + 1].real();
-             int Q1 = decimator_out.p[sample_idx + 1].imag();
- 
-             bit_decision = (I0 * Q1 - I1 * Q0) > 0 ? 1 : 0;
-             rb_buf[packet_index] = rb_buf[packet_index] | (bit_decision << j);
- 
-             sample_idx += SAMPLE_PER_SYMBOL;
+            sample_idx += SAMPLE_PER_SYMBOL;
+
+            if (sample_idx > num_samples_left)
+            {
+                bit_index++;
+                return;
+            }
          }
- 
-         packet_index++;
+         
+        bit_index = 0;
      }
+
+
+     for (int i = 0; i < num_demod_byte; i++)
+     {
+        fskPacketData.data[i] = rb_buf[i];
+     }
+
+     memset(rb_buf, 0, sizeof(rb_buf));
+
+     packet_index = 0;
+     bit_index = 0;
+
+     fskPacketData.dataLen = num_demod_byte;
+     
+    FSKRxPacketMessage data_message{&fskPacketData};
+    shared_memory.application_queue.push(data_message);
  
      // Check CRC
-     bool crc_flag = crc_check(rb_buf, payload_len + 2, crc_init_internal);
+     //bool crc_flag = crc_check(rb_buf, payload_len + 2, crc_init_internal);
 
      parseState = Parse_State_Begin;
  }
@@ -215,22 +223,16 @@
 
      feed_channel_stats(decim_1_out);
  
-     symbols_eaten = 0;
+     samples_eaten = 0;
+
+     // Handle parsing based on parseState
+     if (parseState == Parse_State_Begin) {
+         handleBeginState(decim_1_out);
+     }
  
-     while (symbols_eaten < (int)dst_buffer.count) {
-        // Handle parsing based on parseState
-        if (parseState == Parse_State_Begin) {
-            handleBeginState(decim_1_out);
-        }
-
-        if (parseState == Parse_State_PDU_Header) {
-            handlePDUHeaderState(decim_1_out);
-        }
-
-        if (parseState == Parse_State_PDU_Payload) {
-            handlePDUPayloadState(decim_1_out);
-        }
-    }
+     if (parseState == Parse_State_PDU_Payload) {
+         handlePDUPayloadState(decim_1_out);
+     }
  }
  
  void FSKRxProcessor::on_message(const Message* const message) {

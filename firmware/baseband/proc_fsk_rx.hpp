@@ -43,14 +43,13 @@
      void on_message(const Message* const message) override;
  
     private:
-        static constexpr int SAMPLE_PER_SYMBOL{1};
+        static constexpr int SAMPLE_PER_SYMBOL{2};
         static constexpr int LEN_DEMOD_BUF_SYNC_WORD{32};
         static constexpr uint32_t DEFAULT_SYNC_WORD{0x84B3E374};
         static constexpr int NUM_SYNC_WORD_BYTE{4};
  
      enum Parse_State {
          Parse_State_Begin = 0,
-         Parse_State_PDU_Header,
          Parse_State_PDU_Payload
      };
  
@@ -97,10 +96,8 @@
      FskPacketData fskPacketData{};
  
      Parse_State parseState{Parse_State_Begin};
-     uint16_t packet_index{0};
      int sample_idx{0};
-     int symbols_eaten{0};
-     uint8_t bit_decision{0};
+     int samples_eaten{0};
      uint8_t payload_len{0};
      uint8_t pdu_type{0};
      int32_t max_dB{0};
