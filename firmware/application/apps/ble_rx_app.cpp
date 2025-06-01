@@ -33,6 +33,7 @@
 #include "portapack_persistent_memory.hpp"
 #include "ui_fileman.hpp"
 #include "ui_textentry.hpp"
+#include "usb_serial_asyncmsg.hpp"
 
 using namespace portapack;
 using namespace modems;
@@ -555,6 +556,8 @@ BLERxView::BLERxView(NavigationView& nav)
                   &button_switch,
                   &recent_entries_view});
 
+    async_tx_states_when_entered = portapack::async_tx_enabled;
+
     
     #if USE_FSK_RX
     baseband::set_fsk(7500, 10);
@@ -567,9 +570,9 @@ BLERxView::BLERxView(NavigationView& nav)
     check_serial_log.on_select = [this](Checkbox&, bool v) {
         serial_logging = v;
         if (v) {
-            usb_serial_thread = std::make_unique<UsbSerialThread>();
+            portapack::async_tx_enabled = true;
         } else {
-            usb_serial_thread.reset();
+            portapack::async_tx_enabled = false;
         }
     };
     check_serial_log.set_value(serial_logging);
@@ -846,8 +849,7 @@ void BLERxView::on_data_fsk(FskPacketData* packet) {
     str_console += "\r\n";
 
     if (serial_logging) {
-        usb_serial_thread->serial_str = str_console;
-        usb_serial_thread->str_ready = true;
+        UsbSerialAsyncmsg::asyncmsg(str_console);  // new line handled there, no need here.
     }
 
     str_console = "";
@@ -898,10 +900,9 @@ void BLERxView::on_data(BlePacketData* packet) {
 
             logger->log_raw_data(packetString);
         }
-
+    
         if (serial_logging) {
-            usb_serial_thread->serial_str = str_console;
-            usb_serial_thread->str_ready = true;
+            UsbSerialAsyncmsg::asyncmsg(str_console);  // new line handled there, no need here.
         }
 
         str_console = "";
@@ -1079,6 +1080,7 @@ void BLERxView::set_parent_rect(const Rect new_parent_rect) {
 }
 
 BLERxView::~BLERxView() {
+    portapack::async_tx_enabled = async_tx_states_when_entered;
     receiver_model.disable();
     baseband::shutdown();
 }

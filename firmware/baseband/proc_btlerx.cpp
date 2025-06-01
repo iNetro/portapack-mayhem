@@ -123,8 +123,7 @@ int BTLERxProcessor::verify_payload_byte(int num_payload_byte, ADV_PDU_TYPE pdu_
 }
 
 void BTLERxProcessor::handleBeginState() {
-    int num_symbol_left = (dst_buffer.count / SAMPLE_PER_SYMBOL) - symbols_eaten;  // One buffer sample consist of I and Q.
-    sample_idx = symbols_eaten;
+    int num_samples_left = dst_buffer.count - samples_eaten;  // One buffer sample consist of I and Q.
 
     uint32_t validAccessAddress = DEFAULT_ACCESS_ADDR;
     const int demod_buf_len = LEN_DEMOD_BUF_ACCESS;
@@ -133,7 +132,9 @@ void BTLERxProcessor::handleBeginState() {
     int hit_idx = (-1);
     bool foundAccessAddress = false;
 
-    for (int i = sample_idx; i < num_symbol_left * SAMPLE_PER_SYMBOL; i += SAMPLE_PER_SYMBOL) {
+    for (int i = samples_eaten; i < num_samples_left; i += SAMPLE_PER_SYMBOL) {
+
+        int phaseSum = 0;
 
         for (int j = 0; j < SAMPLE_PER_SYMBOL; j++) {
             // Sample and compare with the adjacent next sample.
@@ -142,19 +143,21 @@ void BTLERxProcessor::handleBeginState() {
             int I1 = dst_buffer.p[i + j + 1].real();
             int Q1 = dst_buffer.p[i + j + 1].imag();
 
+            int phaseDiff = (I0 * Q1 - I1 * Q0);  // Positive = one direction, negative = the other
+            phaseSum += phaseDiff;
+        }
 
-            bool bitDecision = (I0 * Q1 - I1 * Q0) > 0 ? 1 : 0;
+        bool bitDecision = (phaseSum > 0);
 
-            accesssAddress = (accesssAddress >> 1 | (bitDecision << 31));
+        accesssAddress = (accesssAddress >> 1 | (bitDecision << 31));
 
-            int errors = __builtin_popcount(accesssAddress ^ validAccessAddress) & 0xFFFFFFFF;
+        int errors = __builtin_popcount(accesssAddress ^ validAccessAddress) & 0xFFFFFFFF;
 
-            if (!errors)
-            {
-                hit_idx = (i + j - (demod_buf_len - 1) * SAMPLE_PER_SYMBOL);
-                foundAccessAddress = true;
-                break;
-            }
+        if (!errors)
+        {
+            hit_idx = (i - (demod_buf_len - 1) * SAMPLE_PER_SYMBOL);
+            foundAccessAddress = true;
+            break;
         }
 
         if (foundAccessAddress) {
@@ -164,15 +167,15 @@ void BTLERxProcessor::handleBeginState() {
 
     if (hit_idx == -1) {
         // Process more samples.
-        symbols_eaten = dst_buffer.count + 1;
+        samples_eaten = dst_buffer.count + 1;
         return;
     }
 
-    symbols_eaten += hit_idx;
+    samples_eaten += hit_idx;
 
-    symbols_eaten += (8 * NUM_ACCESS_ADDR_BYTE * SAMPLE_PER_SYMBOL);  // move to the beginning of PDU header
+    samples_eaten += (8 * NUM_ACCESS_ADDR_BYTE * SAMPLE_PER_SYMBOL);  // move to the beginning of PDU header
 
-    num_symbol_left = num_symbol_left - symbols_eaten;
+    num_samples_left =- samples_eaten;
 
     parseState = Parse_State_PDU_Header;
 }
@@ -180,14 +183,9 @@ void BTLERxProcessor::handleBeginState() {
 void BTLERxProcessor::handlePDUHeaderState() {
     int num_demod_byte = 2;  // PDU header has 2 octets
 
-    symbols_eaten += 8 * num_demod_byte * SAMPLE_PER_SYMBOL;
-
-    if (symbols_eaten > (int)dst_buffer.count) {
+    if (samples_eaten > (int)dst_buffer.count) {
         return;
     }
-
-    // Jump back down to the beginning of PDU header.
-    sample_idx = symbols_eaten - (8 * num_demod_byte * SAMPLE_PER_SYMBOL);
 
     packet_index = 0;
 
@@ -195,15 +193,26 @@ void BTLERxProcessor::handlePDUHeaderState() {
         rb_buf[packet_index] = 0;
 
         for (int j = 0; j < 8; j++) {
-            int I0 = dst_buffer.p[sample_idx].real();
-            int Q0 = dst_buffer.p[sample_idx].imag();
-            int I1 = dst_buffer.p[sample_idx + 1].real();
-            int Q1 = dst_buffer.p[sample_idx + 1].imag();
 
-            bit_decision = (I0 * Q1 - I1 * Q0) > 0 ? 1 : 0;
-            rb_buf[packet_index] = rb_buf[packet_index] | (bit_decision << j);
+            int phaseSum = 0;
+            int k = 0;
 
-            sample_idx += SAMPLE_PER_SYMBOL;
+            for (k = 0; k < SAMPLE_PER_SYMBOL; k++) {
+                // Sample and compare with the adjacent next sample.
+                int I0 = dst_buffer.p[samples_eaten + k].real();
+                int Q0 = dst_buffer.p[samples_eaten + k].imag();
+                int I1 = dst_buffer.p[samples_eaten + k + 1].real();
+                int Q1 = dst_buffer.p[samples_eaten + k + 1].imag();
+
+                int phaseDiff = (I0 * Q1 - I1 * Q0);  // Positive = one direction, negative = the other
+                phaseSum += phaseDiff;
+            }
+
+            bool bitDecision = (phaseSum > 0);
+
+            rb_buf[packet_index] = rb_buf[packet_index] | (bitDecision << j);
+
+            samples_eaten += SAMPLE_PER_SYMBOL;
         }
 
         packet_index++;
@@ -228,9 +237,8 @@ void BTLERxProcessor::handlePDUHeaderState() {
 void BTLERxProcessor::handlePDUPayloadState() {
     int i;
     int num_demod_byte = (payload_len + 3);
-    symbols_eaten += 8 * num_demod_byte * SAMPLE_PER_SYMBOL;
 
-    if (symbols_eaten > (int)dst_buffer.count) {
+    if (samples_eaten > (int)dst_buffer.count) {
         return;
     }
 
@@ -238,15 +246,26 @@ void BTLERxProcessor::handlePDUPayloadState() {
         rb_buf[packet_index] = 0;
 
         for (int j = 0; j < 8; j++) {
-            int I0 = dst_buffer.p[sample_idx].real();
-            int Q0 = dst_buffer.p[sample_idx].imag();
-            int I1 = dst_buffer.p[sample_idx + 1].real();
-            int Q1 = dst_buffer.p[sample_idx + 1].imag();
 
-            bit_decision = (I0 * Q1 - I1 * Q0) > 0 ? 1 : 0;
-            rb_buf[packet_index] = rb_buf[packet_index] | (bit_decision << j);
+            int phaseSum = 0;
+            int k = 0;
 
-            sample_idx += SAMPLE_PER_SYMBOL;
+            for (k = 0; k < SAMPLE_PER_SYMBOL; k++) {
+                // Sample and compare with the adjacent next sample.
+                int I0 = dst_buffer.p[samples_eaten + k].real();
+                int Q0 = dst_buffer.p[samples_eaten + k].imag();
+                int I1 = dst_buffer.p[samples_eaten + k + 1].real();
+                int Q1 = dst_buffer.p[samples_eaten + k + 1].imag();
+
+                int phaseDiff = (I0 * Q1 - I1 * Q0);  // Positive = one direction, negative = the other
+                phaseSum += phaseDiff;
+            }
+
+            bool bitDecision = (phaseSum > 0);
+
+            rb_buf[packet_index] = rb_buf[packet_index] | (bitDecision << j);
+
+            samples_eaten += SAMPLE_PER_SYMBOL;
         }
 
         packet_index++;
@@ -332,9 +351,9 @@ void BTLERxProcessor::execute(const buffer_c8_t& buffer) {
     decim_0.execute(buffer, dst_buffer);
     feed_channel_stats(dst_buffer);
 
-    symbols_eaten = 0;
+    samples_eaten = 0;
 
-    while (symbols_eaten < (int)dst_buffer.count) {
+    while (samples_eaten < (int)dst_buffer.count) {
         // Handle parsing based on parseState
         if (parseState == Parse_State_Begin) {
             handleBeginState();

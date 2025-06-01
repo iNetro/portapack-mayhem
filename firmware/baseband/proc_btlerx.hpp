@@ -120,8 +120,7 @@ class BTLERxProcessor : public BasebandProcessor {
 
     Parse_State parseState{Parse_State_Begin};
     uint16_t packet_index{0};
-    int sample_idx{0};
-    int symbols_eaten{0};
+    int samples_eaten{0};
     uint8_t bit_decision{0};
     uint8_t payload_len{0};
     uint8_t pdu_type{0};
