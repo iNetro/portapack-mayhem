@@ -45,7 +45,7 @@
     private:
         static constexpr int SAMPLE_PER_SYMBOL{2};
         static constexpr int LEN_DEMOD_BUF_SYNC_WORD{32};
-        static constexpr uint32_t DEFAULT_SYNC_WORD{0x84B3E374};
+        static constexpr uint64_t DEFAULT_SYNC_WORD{0xAAAAAAAA84B3E374};
         static constexpr int NUM_SYNC_WORD_BYTE{4};
  
      enum Parse_State {

@@ -459,9 +459,9 @@ struct FskPacketData {
     int8_t real;
     int8_t imag;
     int max_dB;
-    uint8_t data[16];
-    uint8_t dataLen;
-    uint32_t syncWord;
+    uint8_t data[360];
+    uint16_t dataLen;
+    uint64_t syncWord;
 };
 
 class BLEPacketMessage : public Message {

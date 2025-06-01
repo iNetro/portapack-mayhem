@@ -54,14 +54,12 @@
  }
  
  void FSKRxProcessor::handleBeginState(const buffer_c16_t &decimator_out) {
-     int num_symbol_left = decimator_out.count / SAMPLE_PER_SYMBOL;  // One buffer sample consist of I and Q.
+     int num_symbol_left = (int)decimator_out.count / SAMPLE_PER_SYMBOL;  // One buffer sample consist of I and Q.
 
-     uint32_t validSyncWord = DEFAULT_SYNC_WORD;
-     const int demod_buf_len = LEN_DEMOD_BUF_SYNC_WORD;
+     uint64_t validSyncWord = DEFAULT_SYNC_WORD;
 
-     static uint32_t syncWordValue = 0;
-     static uint8_t syncError = 0;
- 
+     static uint64_t syncWordValue = 0;
+
      int hit_idx = (-1);
      bool foundSyncWord = false;
 
@@ -85,21 +83,17 @@
 
         syncWordValue = syncWordValue << 1 | bitDecision;
 
-        int errors = __builtin_popcount(syncWordValue ^ validSyncWord) & 0xFFFFFFFF;
+        int errors = __builtin_popcountll(syncWordValue ^ validSyncWord) & 0xFFFFFFFFFFFFFFFF;
 
         if (errors == 0)
         {
-            hit_idx = i;
+            hit_idx = i + SAMPLE_PER_SYMBOL;
             foundSyncWord = true;
 
-            fskPacketData.syncWord = syncWordValue;
-            fskPacketData.max_dB = max_dB;
-
-            // FSKRxPacketMessage data_message{&fskPacketData};
-            // shared_memory.application_queue.push(data_message);
+            fskPacketData.syncWord = syncWordValue & 0xFFFFFFFFFFFFFFFF;
+            fskPacketData.max_dB = hit_idx;
 
             syncWordValue = 0;
-            syncError = 0;
 
             break;
         }
@@ -110,34 +104,30 @@
     }
 
     if (hit_idx == -1) {
- 
-        syncError++;
-
-        if (syncError == 4)
-        {
-            syncWordValue = 0;
-            syncError = 0;
-        }
-
         return;
     }
 
-     samples_eaten = hit_idx + SAMPLE_PER_SYMBOL;
+     samples_eaten = hit_idx;
      parseState = Parse_State_PDU_Payload;
  }
  
  void FSKRxProcessor::handlePDUPayloadState(const buffer_c16_t &decimator_out) {
-     int num_demod_byte = 10;
-     int num_samples_left = decimator_out.count - samples_eaten; 
+     int num_demod_byte = 360;
+     int num_samples_left = (int)decimator_out.count - samples_eaten; 
      
      sample_idx = samples_eaten;
 
-     static uint8_t packet_index = 0;
+     static uint16_t packet_index = 0;
      static uint8_t bit_index = 0;
- 
-     for (packet_index; packet_index < num_demod_byte; packet_index++) {
 
-         for (bit_index; bit_index < 8; bit_index++) 
+     if (!num_samples_left)
+     {
+        return;
+     }
+
+     for (; packet_index < num_demod_byte; packet_index++) {
+
+         for ( ; bit_index < 8; bit_index++) 
          {
             int phaseSum = 0;
             int k = 0;
@@ -159,9 +149,18 @@
  
             sample_idx += SAMPLE_PER_SYMBOL;
 
-            if (sample_idx > num_samples_left)
+            if (sample_idx == (int)decimator_out.count)
             {
-                bit_index++;
+                if (bit_index == 7)
+                {
+                    bit_index = 0;
+                    packet_index++;
+                }
+                else
+                {
+                    bit_index++;
+                }
+
                 return;
             }
          }
@@ -243,7 +242,7 @@
  void FSKRxProcessor::configure(const FSKRxConfigureMessage& message) {
      channel_number = message.channel_number;
      decim_0.configure(taps_180k_wfm_decim_0.taps);
-     decim_1.configure(taps_16k0_decim_1.taps);
+     decim_1.configure(taps_7k5_decim_1.taps);
 
      configured = true;
  
