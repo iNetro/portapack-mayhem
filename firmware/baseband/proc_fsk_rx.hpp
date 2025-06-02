@@ -56,7 +56,7 @@
      uint8_t macAddress[6];
      int checksumReceived = 0;
 
-     static constexpr size_t baseband_fs = 30000;
+     static constexpr size_t baseband_fs = 480000;
  
      uint_fast32_t crc_update(uint_fast32_t crc, const void* data, size_t data_len);
      uint_fast32_t crc24_byte(uint8_t* byte_in, int num_byte, uint32_t init_hex);

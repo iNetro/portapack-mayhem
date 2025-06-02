@@ -509,14 +509,6 @@ static std::uint64_t get_freq_by_channel_number(uint8_t channel_number) {
     return freq_hz;
 }
 
-static std::uint64_t get_freq_by_channel_number_fsk(uint8_t channel_number) {
-    uint64_t freq_hz;
-
-    freq_hz = 902'073'750ull + (channel_number) * 25'000ull;
-
-    return freq_hz;
-}
-
 void BLERxView::focus() {
     options_channel.focus();
 }
@@ -528,11 +520,7 @@ void BLERxView::file_error() {
 BLERxView::BLERxView(NavigationView& nav)
     : nav_{nav} {
 
-    #if USE_FSK_RX   
-    baseband::run_image(portapack::spi_flash::image_tag_fskrx);
-    #else
     baseband::run_image(portapack::spi_flash::image_tag_btle_rx);
-    #endif
 
     add_children({&rssi,
                   &channel,
@@ -557,11 +545,6 @@ BLERxView::BLERxView(NavigationView& nav)
                   &recent_entries_view});
 
     async_tx_states_when_entered = portapack::async_tx_enabled;
-
-    
-    #if USE_FSK_RX
-    baseband::set_fsk(7500, 10);
-    #endif
 
     recent_entries_view.on_select = [this](const BleRecentEntry& entry) {
         nav_.push<BleRecentEntryDetailView>(entry);
@@ -647,12 +630,7 @@ BLERxView::BLERxView(NavigationView& nav)
             auto_channel = false;
         }
 
-        #if USE_FSK_RX
-        field_frequency.set_value(get_freq_by_channel_number_fsk(v));
-        #else
         field_frequency.set_value(get_freq_by_channel_number(v));
-        #endif
-
         channel_number = v;
 
         baseband::set_btlerx(channel_number);
@@ -837,24 +815,6 @@ bool BLERxView::saveFile(const std::filesystem::path& path) {
     return BLE_RX_NO_ERROR;
 }
 
-void BLERxView::on_data_fsk(FskPacketData* packet) {
-
-    str_console = to_string_hex(packet->syncWord) + " db: " + to_string_dec_int(packet->max_dB) + "\r\n";
-
-    for (int i = 0; i < packet->dataLen; i++)
-    {
-        str_console += to_string_hex(packet->data[i]) + " ";
-    }
-
-    str_console += "\r\n";
-
-    if (serial_logging) {
-        UsbSerialAsyncmsg::asyncmsg(str_console);  // new line handled there, no need here.
-    }
-
-    str_console = "";
-}
-
 void BLERxView::on_data(BlePacketData* packet) {
     if (!logging) {
         str_log = "";
@@ -986,16 +946,6 @@ void BLERxView::on_timer() {
     if (++timer_count == timer_period) {
         timer_count = 0;
 
-        #if USE_FSK_RX
-        if (auto_channel) {
-            int min = 0;
-            int max = 15;
-
-            int randomChannel = min + std::rand() % (max - min + 1);
-
-            field_frequency.set_value(get_freq_by_channel_number_fsk(randomChannel));
-        }
-        #else
         if (auto_channel) {
             int min = 37;
             int max = 39;
@@ -1005,7 +955,6 @@ void BLERxView::on_timer() {
             field_frequency.set_value(get_freq_by_channel_number(randomChannel));
             baseband::set_btlerx(randomChannel);
         }
-        #endif
     }
     if (ble_rx_error != BLE_RX_NO_ERROR) {
         if (ble_rx_error == BLE_RX_LIST_FILENAME_EMPTY_ERROR) {

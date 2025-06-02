@@ -275,6 +275,7 @@ set(CPPSRC
 	apps/ble_tx_app.cpp
 	apps/capture_app.cpp
 	apps/ert_app.cpp
+	apps/lrw_rx_app.cpp
 	apps/pocsag_app.cpp
 	apps/soundboard_app.cpp
 	apps/ui_about_simple.cpp

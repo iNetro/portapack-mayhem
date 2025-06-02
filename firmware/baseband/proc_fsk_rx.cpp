@@ -91,7 +91,7 @@
             foundSyncWord = true;
 
             fskPacketData.syncWord = syncWordValue & 0xFFFFFFFFFFFFFFFF;
-            fskPacketData.max_dB = hit_idx;
+            fskPacketData.max_dB = max_dB;
 
             syncWordValue = 0;
 

@@ -72,6 +72,7 @@
 #include "capture_app.hpp"
 #include "ert_app.hpp"
 #include "pocsag_app.hpp"
+#include "lrw_rx_app.hpp"
 #include "soundboard_app.hpp"
 
 #include "core_control.hpp"
@@ -131,6 +132,7 @@ const NavigationView::AppList NavigationView::appList = {
     {"aprsrx", "APRS", RX, Color::green(), &bitmap_icon_aprs, new ViewFactory<APRSRXView>()},
     {"audio", "Audio", RX, Color::green(), &bitmap_icon_speaker, new ViewFactory<AnalogAudioView>()},
     {"blerx", "BLE Rx", RX, Color::green(), &bitmap_icon_btle, new ViewFactory<BLERxView>()},
+    {"lrwrx", "LRW Rx", RX, Color::green(), &bitmap_icon_btle, new ViewFactory<LRWRxView>()},
     {"ert", "ERT Meter", RX, Color::green(), &bitmap_icon_ert, new ViewFactory<ERTAppView>()},
     {"pocsag", "POCSAG", RX, Color::green(), &bitmap_icon_pocsag, new ViewFactory<POCSAGAppView>()},
     {"radiosonde", "Radiosnde", RX, Color::green(), &bitmap_icon_sonde, new ViewFactory<SondeView>()},
