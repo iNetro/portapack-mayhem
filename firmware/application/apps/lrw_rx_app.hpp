@@ -24,7 +24,7 @@
 #ifndef __LRW_RX_APP_H__
 #define __LRW_RX_APP_H__
 
-#include "ble_tx_app.hpp"
+#include "lrw_tx_app.hpp"
 
 #include "ui.hpp"
 #include "ui_navigation.hpp"
@@ -39,34 +39,104 @@
 #include "file_path.hpp"
 
 #include "recent_entries.hpp"
+#include "message_tools/src/crc16.h"
+#include "message_tools/src/lfsr.h"
+#include "message_tools/src/tpc_encoder.h"
+#include "message_tools/src/systematic_decode.h"
+
+#define LRW_MESSAGE_SIZE 360
+
+using namespace ui;
 
 namespace ui {
 
 struct LRWRecentEntry {
-    using Key = uint64_t;
+    using Key = uint32_t;
 
     static constexpr Key invalid_key = 0xffffffff;
 
-    uint64_t macAddress;
+    uint32_t deviceId;
+    uint16_t msgType;
     int dbValue;
+    uint8_t lrwData[LRW_MESSAGE_SIZE / 3];
+    FskPacketData packetData;
 
     LRWRecentEntry()
         : LRWRecentEntry{0} {
     }
 
     LRWRecentEntry(
-        const uint64_t macAddress)
-        : macAddress{macAddress},
-          dbValue{} {
+        const uint32_t deviceId)
+        : deviceId{deviceId},
+          msgType{},
+          dbValue{},
+          lrwData{}, 
+          packetData{} {
     }
 
     Key key() const {
-        return macAddress;
+        return deviceId;
     }
 };
 
 using LRWRecentEntries = RecentEntries<LRWRecentEntry>;
 using LRWRecentEntriesView = RecentEntriesView<LRWRecentEntries>;
+
+class LRWRecentEntryDetailView : public View {
+   public:
+    LRWRecentEntryDetailView(NavigationView& nav, const LRWRecentEntry& entry);
+
+    void set_entry(const LRWRecentEntry& new_entry);
+    const LRWRecentEntry& entry() const { return entry_; };
+
+    void update_data();
+    void focus() override;
+    void paint(Painter&) override;
+    LRWTxPacket build_packet(LRWRecentEntry entry_);
+    
+   private:
+    NavigationView& nav_;
+    LRWRecentEntry entry_{};
+    //void on_save_file(const std::string value, BLETxPacket packetToSave);
+    //bool saveFile(const std::filesystem::path& path, BLETxPacket packetToSave);
+    //std::string packetFileBuffer{};
+    //std::filesystem::path packet_save_path{blerx_dir / u"Lists/????.csv"};
+
+    static constexpr uint8_t total_data_lines{5};
+
+    Labels label_device_id{
+        {{0 * 8, 0 * 16}, "Device ID:", Theme::getInstance()->fg_light->foreground}};
+
+    Text text_device_id{
+        {10 * 8, 0 * 16, 17 * 8, 16},
+        "-"};
+
+    Labels label_msg_type{
+        {{0 * 8, 1 * 16}, "Msg Type:", Theme::getInstance()->fg_light->foreground}};
+
+    Text text_msg_type{
+        {9 * 8, 1 * 16, 17 * 8, 16},
+        "-"};
+
+    Labels labels{
+        {{0 * 8, 3 * 16}, "Message Data", Theme::getInstance()->fg_light->foreground},
+    };
+
+    Button button_done{
+        {72, 264, 96, 24},
+        "Done"};
+
+    Button button_send{
+        {19, 224, 96, 24},
+        "Send"};
+
+    Rect draw_field(
+        Painter& painter,
+        const Rect& draw_rect,
+        const Style& style,
+        const std::string& label,
+        const std::string& value);
+};
 
 class LRWRxView : public View {
    public:
@@ -79,6 +149,8 @@ class LRWRxView : public View {
     void focus() override;
 
     std::string title() const override { return "LRW RX"; };
+    static std::string pad_string_with_spaces(int snakes);
+    static std::uint64_t get_freq_by_channel_number_fsk(uint8_t channel_number);
 
    private:
     void on_save_file(const std::string value);
@@ -92,13 +164,14 @@ class LRWRxView : public View {
     void handle_entries_sort(uint8_t index);
     void handle_filter_options(uint8_t index);
     void parse_lrw_data(const uint8_t* data, uint8_t length, std::string& nameString, std::string& versionString);
+    void updateEntry(uint8_t * decodedLrwData, LRWRecentEntry& entry);
 
     NavigationView& nav_;
 
     RxRadioState radio_state_{
-        902073750 /* frequency */,
-        480000 /* bandwidth */,
-        480000 /* sampling rate */,
+        902075000,   /* frequency */
+        480000,      /* bandwidth */
+        480000,      /* sampling rate */
         ReceiverModel::Mode::Capture};
     
     uint8_t channel_index{0};
@@ -131,7 +204,7 @@ class LRWRxView : public View {
     bool auto_channel = false;
 
     int16_t timer_count{0};
-    int16_t timer_period{6};  // 100ms
+    int16_t timer_period{28};  // 100ms
 
     std::string filterBuffer{};
     std::string listFileBuffer{};
@@ -196,7 +269,7 @@ class LRWRxView : public View {
     OptionsField options_sort{
         {5 * 8, 2 * 8},
         4,
-        {{"MAC", 0},
+        {{"ID", 0},
          {"Hits", 1},
          {"dB", 2},
          {"Time", 3},
@@ -210,7 +283,7 @@ class LRWRxView : public View {
         {18 * 8 + 2, 2 * 8},
         4,
         {{"Data", 0},
-         {"MAC", 1}}};
+         {"ID", 1}}};
 
     Checkbox check_log{
         {10 * 8, 4 * 8 + 2},
@@ -261,10 +334,16 @@ class LRWRxView : public View {
     LRWRecentEntries recent{};
     LRWRecentEntries tempList{};
 
+    #define DEVICE_ID_COLUMN_LENGTH 10
+    #define MSG_TYPE_COLUMN_LENGTH 5
+    #define VERSION_COLUMN_LENGTH 5
+    #define DBM_COLUMN_LENGTH 4
+
     const RecentEntriesColumns columns{{
         {"Device ID", 10},
-        {"Version", 13},
-        {"dBm", 4},
+        {"Msg.", 5},
+        {"Ver.", 5},
+        {"Dbm", 7},
     }};
 
     LRWRecentEntriesView recent_entries_view{columns, recent};

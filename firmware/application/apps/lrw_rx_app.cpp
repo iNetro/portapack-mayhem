@@ -22,6 +22,7 @@
  */
 
 #include "lrw_rx_app.hpp"
+#include "lrw_tx_app.hpp"
 #include "ui_modemsetup.hpp"
 
 #include "modems.hpp"
@@ -45,14 +46,144 @@ namespace fs = std::filesystem;
 #define BLE_RX_LIST_SAVE_ERROR 3
 #define BLE_RX_ENTRY_SAVE_ERROR 4
 
+static void encoder_init(void)
+{
+	static bool first_time = true;
+
+	// WTB: What happens if the encoder changes at runtime? Can this occur?
+	if (first_time)
+	{
+	    crc16_create_default();
+        lfsr_create_default();
+		tpc_encoder_create(TPC_72_40);
+	}
+
+	first_time = false;
+}
+
+static void decoder_init(void)
+{
+	encoder_init();
+}
+
+static void decode_radio_packet(uint8_t *input_data, uint16_t msg_len, uint8_t *output_buf, uint16_t *outLen)
+{
+	uint8_t decode_in_len = tpc_decoder_get_input_length_bytes(TPC_72_40);
+	uint8_t decode_out_len = tpc_decoder_get_output_length_bytes(TPC_72_40);
+	uint8_t num_blocks = msg_len / decode_in_len;
+	num_blocks += msg_len % decode_in_len ? 1:0;
+	*outLen = num_blocks * decode_out_len;
+
+	decoder_init();
+
+    for(int i = 0; i < num_blocks; i++)
+    {
+        systematic_decode(TPC_72_40, input_data + decode_in_len * i, output_buf + decode_out_len * i);
+    }
+
+    lfsr_reset();
+    lfsr_whiten_bytes(output_buf, output_buf, msg_len);
+
+	return;
+}
 namespace ui {
 
-static std::uint64_t get_freq_by_channel_number_fsk(uint8_t channel_number) {
-    uint64_t freq_hz;
+LRWRecentEntryDetailView::LRWRecentEntryDetailView(NavigationView& nav, const LRWRecentEntry& entry)
+    : nav_{nav},
+      entry_{entry} {
+    add_children({&button_done,
+                  &button_send,
+                  &label_device_id,
+                  &text_device_id,
+                  &label_msg_type,
+                  &text_msg_type,
+                  &labels});
 
-    freq_hz = 902'073'750ull + (channel_number) * 25'000ull;
+    text_device_id.set(to_string_dec_uint(entry.deviceId));
+    text_msg_type.set(to_string_dec_uint(entry.msgType));
 
-    return freq_hz;
+    button_done.on_select = [&nav](const ui::Button&) {
+        nav.pop();
+    };
+
+    button_send.on_select = [this, &nav](const ui::Button&) {
+        auto packetToSend = build_packet(entry_);
+        nav.set_on_pop([packetToSend, &nav]() {
+            nav.replace<LRWTxView>(packetToSend);
+        });
+        nav.pop();
+    };
+}
+
+LRWTxPacket LRWRecentEntryDetailView::build_packet(LRWRecentEntry entry_) {
+    LRWTxPacket lrwTxPacket;
+    memset(&lrwTxPacket, 0, sizeof(LRWTxPacket));
+
+    std::string deviceIdStr = to_string_dec_uint(entry_.deviceId);
+
+    std::string data_string = "";
+
+    int i;
+
+    for (i = 0; i < 32; i++) {
+        data_string += to_string_hex(entry_.lrwData[i], 2);
+    }
+
+    strncpy(lrwTxPacket.deviceId, deviceIdStr.c_str(), 10);
+    strncpy(lrwTxPacket.advertisementData, data_string.c_str(), 32 * 2);
+    strncpy(lrwTxPacket.packetCount, "10", 3);
+    lrwTxPacket.packet_count = 10;
+
+    return lrwTxPacket;
+}
+
+void LRWRecentEntryDetailView::update_data() {
+}
+
+void LRWRecentEntryDetailView::focus() {
+    button_done.focus();
+}
+
+Rect LRWRecentEntryDetailView::draw_field(
+    Painter& painter,
+    const Rect& draw_rect,
+    const Style& style,
+    const std::string& label,
+    const std::string& value) {
+    const int label_length_max = 4;
+
+    painter.draw_string(Point{draw_rect.left(), draw_rect.top()}, style, label);
+    painter.draw_string(Point{draw_rect.left() + (label_length_max + 1) * 8, draw_rect.top()}, style, value);
+
+    return {draw_rect.left(), draw_rect.top() + draw_rect.height(), draw_rect.width(), draw_rect.height()};
+}
+
+void LRWRecentEntryDetailView::paint(Painter& painter) {
+    View::paint(painter);
+
+    const auto s = style();
+    const auto rect = screen_rect();
+
+    auto field_rect = Rect{rect.left(), rect.top() + 64, rect.width(), 16};
+
+    std::string dataString = "";
+    std::string labelString = "";
+
+    uint16_t totalVisableBytes = LRW_MESSAGE_SIZE / 3;
+
+    for (int i = 0; i < totalVisableBytes; i += 12) {
+        dataString = "";
+        labelString = to_string_hex(i, 2);;
+        for (int j = 0; j < 12 && (i + j) < totalVisableBytes; j++) {
+            dataString += to_string_hex(entry_.lrwData[i + j], 2);
+        }
+        field_rect = draw_field(painter, field_rect, s, labelString, dataString);
+    }
+}
+
+void LRWRecentEntryDetailView::set_entry(const LRWRecentEntry& entry) {
+    entry_ = entry;
+    set_dirty();
 }
 
 template <>
@@ -64,7 +195,28 @@ void RecentEntriesTable<LRWRecentEntries>::draw(
     std::string line{};
     line.reserve(30);
 
+    std::string deviceIdStr = to_string_dec_uint(entry.deviceId);
+    std::string msgTypeStr = to_string_dec_uint(entry.msgType);
+    truncate(deviceIdStr, DEVICE_ID_COLUMN_LENGTH);
+    truncate(msgTypeStr, MSG_TYPE_COLUMN_LENGTH);
+
+    line = deviceIdStr + LRWRxView::pad_string_with_spaces(DEVICE_ID_COLUMN_LENGTH - deviceIdStr.length() + 1);
+    line += msgTypeStr + LRWRxView::pad_string_with_spaces(MSG_TYPE_COLUMN_LENGTH - msgTypeStr.length() + 1);
+
     painter.draw_string(target_rect.location(), style, line);
+}
+
+std::string LRWRxView::pad_string_with_spaces(int snakes) {
+    std::string paddedStr(snakes, ' ');
+    return paddedStr;
+}
+
+std::uint64_t LRWRxView::get_freq_by_channel_number_fsk(uint8_t channel_number) {
+    uint64_t freq_hz;
+
+    freq_hz = 902'075'000ull + (channel_number) * 25'000ull;
+
+    return freq_hz;
 }
 
 void LRWRxView::focus() {
@@ -105,7 +257,11 @@ LRWRxView::LRWRxView(NavigationView& nav)
     async_tx_states_when_entered = portapack::async_tx_enabled;
 
     baseband::set_fsk(7500, 10);
- 
+
+    recent_entries_view.on_select = [this](const LRWRecentEntry& entry) {
+        nav_.push<LRWRecentEntryDetailView>(entry);
+    };
+
     check_serial_log.on_select = [this](Checkbox&, bool v) {
         serial_logging = v;
         if (v) {
@@ -152,10 +308,11 @@ LRWRxView::LRWRxView(NavigationView& nav)
     };
 
     button_clear_list.on_select = [this](Button&) {
+        recent.clear();
     };
 
     button_switch.on_select = [&nav](Button&) {
-        nav.replace<BLETxView>();
+        nav.replace<LRWTxView>();
     };
 
     field_frequency.set_step(0);
@@ -218,21 +375,35 @@ bool LRWRxView::saveFile(const std::filesystem::path& path) {
 
 void LRWRxView::on_data_fsk(FskPacketData* packet) {
 
-    str_console = "RAW Packet Data [Receiving]: \r\n";
+    uint16_t decoded_msg_len = 0;
+	uint8_t decoded_msg[LRW_MESSAGE_SIZE] = {0};
 
-    for (int i = 0; i < packet->dataLen; i += 32) {
+    decode_radio_packet(packet->data, packet->dataLen, decoded_msg, &decoded_msg_len);
+
+    // str_console = "RAW Packet Data [Receiving]: \r\n";
+
+    // for (int i = 0; i < packet->dataLen; i += 32) {
+    //     str_console += "[ ";
+    //     for (int j = 0; j < 32 && (i + j) < packet->dataLen; j++) {
+    //         str_console += to_string_hex(packet->data[i + j]) + " ";
+    //     }
+    //     str_console += "]\r\n";
+    // }
+
+    for (int i = 0; i < decoded_msg_len; i += 32) {
         str_console += "[ ";
-        for (int j = 0; j < 32 && (i + j) < packet->dataLen; j++) {
-            str_console += to_string_hex(packet->data[i + j]) + " ";
+        for (int j = 0; j < 32 && (i + j) < decoded_msg_len; j++) {
+            str_console += to_string_hex(decoded_msg[i + j]) + " ";
         }
         str_console += "]\r\n";
     }
 
-    if (serial_logging) {
-        UsbSerialAsyncmsg::asyncmsg(str_console);  // new line handled there, no need here.
-    }
+    uint32_t device_ID = decoded_msg[2] << 24 | decoded_msg[3] << 16 | decoded_msg[4] << 8 | decoded_msg[5];
 
-    str_console = "";
+    auto& entry = ::on_packet(recent, device_ID & 0xFFFFFFFF);
+    updateEntry(decoded_msg, entry);
+
+    recent_entries_view.set_dirty();
 }
 
 void LRWRxView::on_filter_change(std::string value) {
@@ -330,6 +501,23 @@ void LRWRxView::handle_filter_options(uint8_t index) {
         default:
             break;
     }
+}
+
+void LRWRxView::updateEntry(uint8_t * decodedLrwData, LRWRecentEntry& entry) {
+
+    entry.msgType = decodedLrwData[6] << 8 | decodedLrwData[7];
+
+    for (int i = 0; i < LRW_MESSAGE_SIZE / 3; i++) {
+        entry.lrwData[i] = decodedLrwData[i];
+    }
+
+    str_console += "Device ID: " + to_string_dec_uint(entry.deviceId) + "\r\n";
+
+    if (serial_logging) {
+        UsbSerialAsyncmsg::asyncmsg(str_console);  // new line handled there, no need here.
+    }
+
+    str_console = "";
 }
 
 void LRWRxView::set_parent_rect(const Rect new_parent_rect) {

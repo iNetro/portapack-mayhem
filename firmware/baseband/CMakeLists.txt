@@ -150,6 +150,13 @@ set(CPPSRC
 	${COMMON}/performance_counter.cpp
 	${COMMON}/random.cpp
 	tone_gen.cpp
+
+	${COMMON}/message_tools/src/bin_utils.c
+	${COMMON}/message_tools/src/conv_encoder.c
+	${COMMON}/message_tools/src/crc16.c
+	${COMMON}/message_tools/src/lfsr.c
+	${COMMON}/message_tools/src/systematic_decode.c
+	${COMMON}/message_tools/src/tpc_encoder.c
 )
 
 # C sources to be compiled in ARM mode regardless of the global setting.
@@ -411,6 +418,12 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PFSR fskrx)
 
+### LRW TX
+
+set(MODE_CPPSRC
+	proc_fsk_tx.cpp
+)
+DeclareTargets(PLRW lrwtx)
 
 ### Microphone transmit
 

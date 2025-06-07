@@ -275,7 +275,16 @@ set(CPPSRC
 	apps/ble_tx_app.cpp
 	apps/capture_app.cpp
 	apps/ert_app.cpp
+
 	apps/lrw_rx_app.cpp
+	apps/lrw_tx_app.cpp
+	${COMMON}/message_tools/src/bin_utils.c
+	${COMMON}/message_tools/src/conv_encoder.c
+	${COMMON}/message_tools/src/crc16.c
+	${COMMON}/message_tools/src/lfsr.c
+	${COMMON}/message_tools/src/systematic_decode.c
+	${COMMON}/message_tools/src/tpc_encoder.c
+	
 	apps/pocsag_app.cpp
 	apps/soundboard_app.cpp
 	apps/ui_about_simple.cpp
