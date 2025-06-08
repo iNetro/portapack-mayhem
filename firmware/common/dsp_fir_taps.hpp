@@ -312,19 +312,6 @@ constexpr fir_taps_real<24> taps_3k75_decim_0{
     },
 };
 
-// IFIR image-reject filter: fs=120000, pass=4000, stop=8000, decim=8, fout=15000
-constexpr fir_taps_real<32> taps_7k5_decim_1{
-    .low_frequency_normalized = -4000.0f / 120000.0f,
-    .high_frequency_normalized = 4000.0f / 120000.0f,
-    .transition_normalized = 4000.0f / 120000.0f,
-    .taps = {{
-        -1066,  -428,  -442,  -397,  -280,   -86,   186,   528,
-        928,  1366,  1815,  2251,  2642,  2962,  3191,  3309,
-        3309,  3191,  2962,  2642,  2251,  1815,  1366,   928,
-        528,   186,   -86,  -280,  -397,  -442,  -428, -1066
-    }},
-};
-
 // NBFM 8K50F3E emission type /////////////////////////////////////////////
 
 // IFIR image-reject filter: fs=3072000, pass=4250, stop=340250, decim=8, fout=384000
@@ -1676,4 +1663,31 @@ static constexpr fir_taps_real<24> taps_BTLE_2M_PHY_decim_0 = {
 
     }},
 };
+
+
+//LRW
+
+constexpr fir_taps_real<24> taps_96k0_lrw_decim_0 = {
+    .low_frequency_normalized = -90000.0f / 3072000.0f,
+    .high_frequency_normalized = 90000.0f / 3072000.0f,
+    .transition_normalized = 160000.0f / 3072000.0f,
+    .taps = {{
+        127, 38, -178, -583, -1047, -1301, -1018, 24,
+        1794, 3948, 5910, 7081, 7081, 5910, 3948, 1794,
+        24, -1018, -1301, -1047, -583, -178, 38, 127
+    }},
+};
+
+constexpr fir_taps_real<32> taps_8k0_lrw_decim_1{
+    .low_frequency_normalized = -4000.0f / 120000.0f,
+    .high_frequency_normalized = 4000.0f / 120000.0f,
+    .transition_normalized = 4000.0f / 120000.0f,
+    .taps = {{
+        -446, -79, -31, 64, 210, 410, 659, 952,
+        1278, 1622, 1968, 2296, 2587, 2823, 2990, 3075,
+        3075, 2990, 2823, 2587, 2296, 1968, 1622, 1278,
+        952, 659, 410, 210, 64, -31, -79, -446
+    }},
+};
+
 #endif /*__DSP_FIR_TAPS_H__*/

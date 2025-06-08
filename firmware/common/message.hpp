@@ -462,6 +462,7 @@ struct FskPacketData {
     uint8_t data[360];
     uint16_t dataLen;
     uint64_t syncWord;
+    float power;
 };
 
 class BLEPacketMessage : public Message {

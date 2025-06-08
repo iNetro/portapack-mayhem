@@ -385,7 +385,7 @@ void LRWRxView::on_data_fsk(FskPacketData* packet) {
     // for (int i = 0; i < packet->dataLen; i += 32) {
     //     str_console += "[ ";
     //     for (int j = 0; j < 32 && (i + j) < packet->dataLen; j++) {
-    //         str_console += to_string_hex(packet->data[i + j]) + " ";
+    //         str_console += to_string_dec_int((int8_t)packet->data[i + j]) + " ";
     //     }
     //     str_console += "]\r\n";
     // }

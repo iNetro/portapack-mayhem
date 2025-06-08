@@ -36,6 +36,8 @@
  
  #include "fifo.hpp"
  #include "message.hpp"
+
+  #include <math.h>
  
  class FSKRxProcessor : public BasebandProcessor {
     public:
@@ -49,29 +51,19 @@
         static constexpr int NUM_SYNC_WORD_BYTE{4};
  
      enum Parse_State {
-         Parse_State_Begin = 0,
+         Parse_State_Wait_For_Peak = 0,
+         Parse_State_Begin,
          Parse_State_PDU_Payload
      };
  
-     uint8_t macAddress[6];
-     int checksumReceived = 0;
-
      static constexpr size_t baseband_fs = 480000;
  
-     uint_fast32_t crc_update(uint_fast32_t crc, const void* data, size_t data_len);
-     uint_fast32_t crc24_byte(uint8_t* byte_in, int num_byte, uint32_t init_hex);
-     bool crc_check(uint8_t* tmp_byte, int body_len, uint32_t crc_init);
-     uint32_t crc_init_reorder(uint32_t crc_init);
- 
-     uint32_t crc_initalVale = 0x555555;
-     uint32_t crc_init_internal = 0x00;
- 
-     void scramble_byte(uint8_t* byte_in, int num_byte, const uint8_t* scramble_table_byte, uint8_t* byte_out);
-     // void demod_byte(int num_byte, uint8_t *out_byte);
-     int verify_payload_byte(int num_payload_byte);
- 
+     int8_t fast_atan2_int8(int32_t y, int32_t x);
+     int estimate_afc_offset(const buffer_c8_t& buffer, int N);
+     void afc_correct_iq(int8_t *i_buf, int8_t *q_buf, int N, int offset_hz, int fs);
+     float detect_peak_power(const buffer_c8_t& buffer, int N);
+
      void handleBeginState(const buffer_c16_t &decimator_out);
-     void handlePDUHeaderState(const buffer_c16_t &decimator_out);
      void handlePDUPayloadState(const buffer_c16_t &decimator_out);
  
      std::array<complex16_t, 512> dst{};
@@ -99,11 +91,11 @@
      int sample_idx{0};
      int samples_eaten{0};
      uint8_t payload_len{0};
-     uint8_t pdu_type{0};
      int32_t max_dB{0};
      int8_t real{0};
      int8_t imag{0};
- 
+     uint8_t peak_timeout {0};
+
      /* NB: Threads should be the last members in the class definition. */
      BasebandThread baseband_thread{baseband_fs, this, baseband::Direction::Receive};
      RSSIThread rssi_thread{};
