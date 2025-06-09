@@ -390,13 +390,15 @@ void LRWRxView::on_data_fsk(FskPacketData* packet) {
     //     str_console += "]\r\n";
     // }
 
-    for (int i = 0; i < decoded_msg_len; i += 32) {
-        str_console += "[ ";
-        for (int j = 0; j < 32 && (i + j) < decoded_msg_len; j++) {
-            str_console += to_string_hex(decoded_msg[i + j]) + " ";
-        }
-        str_console += "]\r\n";
-    }
+    // for (int i = 0; i < decoded_msg_len; i += 32) {
+    //     str_console += "[ ";
+    //     for (int j = 0; j < 32 && (i + j) < decoded_msg_len; j++) {
+    //         str_console += to_string_hex(decoded_msg[i + j]) + " ";
+    //     }
+    //     str_console += "]\r\n";
+    // }
+
+    //str_console += to_string_decimal(packet->power, 6) + "\r\n";
 
     uint32_t device_ID = decoded_msg[2] << 24 | decoded_msg[3] << 16 | decoded_msg[4] << 8 | decoded_msg[5];
 

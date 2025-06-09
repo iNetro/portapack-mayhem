@@ -58,10 +58,8 @@
  
      static constexpr size_t baseband_fs = 480000;
  
-     int8_t fast_atan2_int8(int32_t y, int32_t x);
-     int estimate_afc_offset(const buffer_c8_t& buffer, int N);
-     void afc_correct_iq(int8_t *i_buf, int8_t *q_buf, int N, int offset_hz, int fs);
      float detect_peak_power(const buffer_c8_t& buffer, int N);
+     void agc_correct_iq(const buffer_c8_t& buffer, int N, float measured_power);
 
      void handleBeginState(const buffer_c16_t &decimator_out);
      void handlePDUPayloadState(const buffer_c16_t &decimator_out);
@@ -80,7 +78,7 @@
      dsp::demodulate::FM demod{};
      int rb_head{-1};
      int32_t g_threshold{0};
-     uint8_t channel_number{37};
+     uint8_t channel_number{0};
  
      uint16_t process = 0;
  
@@ -95,6 +93,8 @@
      int8_t real{0};
      int8_t imag{0};
      uint8_t peak_timeout {0};
+     float noise_floor {10.0};
+     float target_power_db {10.0};
 
      /* NB: Threads should be the last members in the class definition. */
      BasebandThread baseband_thread{baseband_fs, this, baseband::Direction::Receive};

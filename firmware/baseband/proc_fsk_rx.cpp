@@ -28,41 +28,21 @@
  
  #include "event_m4.hpp"
 
-#define WINDOW 128
-#define FS 480000
-#define SCALE_FACTOR_Q13 488544  // For FS = 480 kHz
-#define NOISE_FLOOR_POWER 1480.0;
-
 float FSKRxProcessor::detect_peak_power(const buffer_c8_t& buffer, int N) 
 {
-    int32_t best_power = 0;
     int32_t power = 0;
 
     // Initial window power
-    for (int j = 0; j < WINDOW; j++) {
-        int16_t i_sample = buffer.p[j].real();
-        int16_t q_sample = buffer.p[j].imag();
+    for (int i = 0; i < N; i++) {
+        int16_t i_sample = buffer.p[i].real();
+        int16_t q_sample = buffer.p[i].imag();
         power += i_sample * i_sample + q_sample * q_sample;
     }
-    best_power = power;
 
-    // Sliding window
-    for (int i = 1; i <= N - WINDOW; i++) {
-        int16_t i_out = buffer.p[i - 1].real();
-        int16_t q_out = buffer.p[i - 1].imag();
-        int16_t i_in  = buffer.p[i + WINDOW - 1].real();
-        int16_t q_in  = buffer.p[i + WINDOW - 1].imag();
-
-        power += i_in * i_in + q_in * q_in;
-        power -= i_out * i_out + q_out * q_out;
-
-        if (power > best_power) {
-            best_power = power;
-        }
-    }
+    power = power / N;
 
     // Convert to dB over noise floor
-    float power_db = 10.0f * log10f((float)best_power / 1480.0f);
+    float power_db = 10.0f * log10f((float)power / noise_floor);
 
     // If too weak, treat as no signal
     if (power_db <= 0.0f) return 0;
@@ -70,82 +50,21 @@ float FSKRxProcessor::detect_peak_power(const buffer_c8_t& buffer, int N)
     return power_db;
 }
 
-int8_t FSKRxProcessor::fast_atan2_int8(int32_t y, int32_t x) {
-    const int32_t pi = 128;
-    const int32_t pi_2 = pi / 2;
-    const int32_t pi_4 = pi / 4;
-
-    if (x == 0) {
-        if (y > 0) return pi_2;
-        if (y < 0) return -pi_2;
-        return 0;
-    }
-
-    int32_t abs_y = y >= 0 ? y : -y;
-    int32_t angle;
-
-    if (abs_y < abs(x)) {
-        int32_t r = (pi_4 * y) / x;
-        angle = (x > 0) ? r : (y >= 0 ? r + pi : r - pi);
-    } else {
-        int32_t r = (pi_4 * x) / y;
-        angle = (y > 0) ? (pi_2 - r) : (-pi_2 - r);
-    }
-
-    // Clamp result to int8_t range
-    if (angle > 127) return 127;
-    if (angle < -128) return -128;
-    return (int8_t)angle;
-}
-
-int FSKRxProcessor::estimate_afc_offset(const buffer_c8_t& buffer, int N) 
+void FSKRxProcessor::agc_correct_iq(const buffer_c8_t& buffer, int N, float measured_power) 
 {
-    // Compute phase differences
-    int32_t phase_sum = 0;
-    for (int n = 1; n < N; n++) {
-        int16_t i0 = buffer.p[n - 1].real();
-        int16_t q0 = buffer.p[n - 1].imag();
-        int16_t i1 = buffer.p[n].real();
-        int16_t q1 = buffer.p[n].imag();
+    float power_db = 10.0f * log10f(measured_power / noise_floor);
+    float error_db = target_power_db - power_db;
 
-        int32_t re = i1 * i0 + q1 * q0;
-        int32_t im = q1 * i0 - i1 * q0;
-
-        int8_t angle = fast_atan2_int8(im, re);  // Q7 range: −128..127
-        phase_sum += angle;
+    if (!error_db)
+    {
+        return;
     }
 
-    int32_t avg_q7 = phase_sum / (N - 1);
-    int32_t offset_q13 = avg_q7 * SCALE_FACTOR_Q13;
-    int offset_hz = offset_q13 >> 13;
+    float gain_scalar = powf(10.0f, error_db / 20.0f);
 
-    return offset_hz;
-}
-
-void FSKRxProcessor::afc_correct_iq(int8_t *i_buf, int8_t *q_buf, int N, int offset_hz, int fs) {
-    uint8_t phase = 0;
-    uint32_t phase_acc = 0;
-    uint32_t phase_inc = ((uint64_t)offset_hz << 32) / fs;  // Q32 phase increment
-
-    for (int n = 0; n < N; n++) {
-        // Lookup sin/cos (rotate by -phase)
-        phase = phase_acc >> 24;  // Top 8 bits
-        int8_t cos_val = sine_table_i8[(phase +  64) & 0xFF];  // cos(x) = sin(x + π/2)
-        int8_t sin_val = -sine_table_i8[phase];                // sin(-x) = -sin(x)
-
-        int16_t i = i_buf[n];
-        int16_t q = q_buf[n];
-
-        // Rotate: I' = I*cos - Q*sin, Q' = I*sin + Q*cos
-        int16_t i_rot = (i * cos_val - q * sin_val) >> 7;
-        int16_t q_rot = (i * sin_val + q * cos_val) >> 7;
-
-        // Clamp and store
-        i_buf[n] = (int8_t)(i_rot < -128 ? -128 : (i_rot > 127 ? 127 : i_rot));
-        q_buf[n] = (int8_t)(q_rot < -128 ? -128 : (q_rot > 127 ? 127 : q_rot));
-
-        // Advance phase
-        phase_acc += phase_inc;
+    for (int i = 0; i < N; i++)
+    {
+        buffer.p[i] = {buffer.p[i].real() * gain_scalar, buffer.p[i].imag() * gain_scalar};
     }
 }
 
@@ -288,12 +207,17 @@ void FSKRxProcessor::afc_correct_iq(int8_t *i_buf, int8_t *q_buf, int N, int off
     if (!configured) return;
 
     float power = detect_peak_power(buffer, buffer.count);
- 
-    if ((power > 1.0f) && (parseState == Parse_State_Wait_For_Peak))
+
+    if (power > 1.0f)
     {
-        parseState = Parse_State_Begin;
-        fskPacketData.power = power;
-        peak_timeout = 0;
+        agc_correct_iq(buffer, buffer.count, power);
+
+        if (parseState == Parse_State_Wait_For_Peak)
+        {
+            parseState = Parse_State_Begin;
+            fskPacketData.power = power;
+            peak_timeout = 0;
+        }
     }
     else
     {
@@ -332,7 +256,7 @@ void FSKRxProcessor::afc_correct_iq(int8_t *i_buf, int8_t *q_buf, int N, int off
  
  void FSKRxProcessor::configure(const FSKRxConfigureMessage& message) {
      channel_number = message.channel_number;
-     decim_0.configure(taps_96k0_lrw_decim_0.taps);
+     decim_0.configure(taps_50k0_lrw_decim_0.taps);
      decim_1.configure(taps_8k0_lrw_decim_1.taps);
 
      configured = true;
