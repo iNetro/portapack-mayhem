@@ -230,7 +230,7 @@ void LRWRxView::file_error() {
 LRWRxView::LRWRxView(NavigationView& nav)
     : nav_{nav} {
 
-    baseband::run_image(portapack::spi_flash::image_tag_lrwtx);
+    baseband::run_image(portapack::spi_flash::image_tag_lrwrx);
 
     add_children({&rssi,
                   &channel,
