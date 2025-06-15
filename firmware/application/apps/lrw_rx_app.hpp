@@ -44,7 +44,7 @@
 #include "message_tools/src/tpc_encoder.h"
 #include "message_tools/src/systematic_decode.h"
 
-#define LRW_MESSAGE_SIZE 360
+#define LRW_MESSAGE_SIZE 200
 
 using namespace ui;
 
@@ -165,13 +165,14 @@ class LRWRxView : public View {
     void handle_filter_options(uint8_t index);
     void parse_lrw_data(const uint8_t* data, uint8_t length, std::string& nameString, std::string& versionString);
     void updateEntry(uint8_t * decodedLrwData, LRWRecentEntry& entry);
+    void on_packet_waiting(void);
 
     NavigationView& nav_;
 
     RxRadioState radio_state_{
         902075000,   /* frequency */
-        480000,      /* bandwidth */
-        480000,      /* sampling rate */
+        960000,      /* bandwidth */
+        960000,      /* sampling rate */
         ReceiverModel::Mode::Capture};
     
     uint8_t channel_index{0};
@@ -204,7 +205,7 @@ class LRWRxView : public View {
     bool auto_channel = false;
 
     int16_t timer_count{0};
-    int16_t timer_period{28};  // 100ms
+    int16_t timer_period{9};  // 150ms
 
     std::string filterBuffer{};
     std::string listFileBuffer{};
@@ -353,6 +354,13 @@ class LRWRxView : public View {
         [this](Message* const p) {
             const auto message = static_cast<const FSKRxPacketMessage*>(p);
             this->on_data_fsk(message->packet);
+        }};
+
+    MessageHandlerRegistration message_handler_lrw_decoded_packet{
+        Message::ID::LRWDecodedPacket,
+        [this](Message* const p) {
+            const auto message = static_cast<const LRWDecodeMessage*>(p);
+            this->on_packet_waiting();
         }};
 
     MessageHandlerRegistration message_handler_frame_sync{

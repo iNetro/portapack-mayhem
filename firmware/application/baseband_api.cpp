@@ -209,6 +209,11 @@ void set_afsk_data(const uint32_t afsk_samples_per_bit, const uint32_t afsk_phas
     send_message(&message);
 }
 
+void set_lrw_decode(void) {
+    const LRWDecodeMessage message{};
+    send_message(&message);
+}
+
 void kill_afsk() {
     const AFSKTxConfigureMessage message{
         0,

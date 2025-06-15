@@ -27,6 +27,16 @@
 
 #include "event_m4.hpp"
 
+float BTLERxProcessor::get_phase_diff(const complex16_t &sample0, const complex16_t &sample1)
+{
+    // Calculate the phase difference between two samples.
+    float dI = sample1.real() * sample0.real() + sample1.imag() * sample0.imag();
+    float dQ = sample1.imag() * sample0.real() - sample1.real() * sample0.imag();
+    float phase_diff = atan2f(dQ, dI);
+
+    return phase_diff;
+}
+
 uint32_t BTLERxProcessor::crc_init_reorder(uint32_t crc_init) {
     int i;
     uint32_t crc_init_tmp, crc_init_input, crc_init_input_tmp;
@@ -134,20 +144,13 @@ void BTLERxProcessor::handleBeginState() {
 
     for (int i = samples_eaten; i < num_samples_left; i += SAMPLE_PER_SYMBOL) {
 
-        int phaseSum = 0;
+        float phaseDiff = 0;
 
         for (int j = 0; j < SAMPLE_PER_SYMBOL; j++) {
-            // Sample and compare with the adjacent next sample.
-            int I0 = dst_buffer.p[i + j].real();
-            int Q0 = dst_buffer.p[i + j].imag();
-            int I1 = dst_buffer.p[i + j + 1].real();
-            int Q1 = dst_buffer.p[i + j + 1].imag();
-
-            int phaseDiff = (I0 * Q1 - I1 * Q0);  // Positive = one direction, negative = the other
-            phaseSum += phaseDiff;
+            phaseDiff += get_phase_diff(dst_buffer.p[i + j], dst_buffer.p[i + j + 1]);
         }
 
-        bool bitDecision = (phaseSum > 0);
+        bool bitDecision = (phaseDiff > 0);
 
         accesssAddress = (accesssAddress >> 1 | (bitDecision << 31));
 
@@ -194,21 +197,14 @@ void BTLERxProcessor::handlePDUHeaderState() {
 
         for (int j = 0; j < 8; j++) {
 
-            int phaseSum = 0;
+            float phaseDiff = 0;
             int k = 0;
 
             for (k = 0; k < SAMPLE_PER_SYMBOL; k++) {
-                // Sample and compare with the adjacent next sample.
-                int I0 = dst_buffer.p[samples_eaten + k].real();
-                int Q0 = dst_buffer.p[samples_eaten + k].imag();
-                int I1 = dst_buffer.p[samples_eaten + k + 1].real();
-                int Q1 = dst_buffer.p[samples_eaten + k + 1].imag();
-
-                int phaseDiff = (I0 * Q1 - I1 * Q0);  // Positive = one direction, negative = the other
-                phaseSum += phaseDiff;
+                phaseDiff += get_phase_diff(dst_buffer.p[samples_eaten + k], dst_buffer.p[samples_eaten + k + 1]);
             }
 
-            bool bitDecision = (phaseSum > 0);
+            bool bitDecision = (phaseDiff > 0);
 
             rb_buf[packet_index] = rb_buf[packet_index] | (bitDecision << j);
 
@@ -247,21 +243,14 @@ void BTLERxProcessor::handlePDUPayloadState() {
 
         for (int j = 0; j < 8; j++) {
 
-            int phaseSum = 0;
+            float phaseDiff = 0;
             int k = 0;
 
             for (k = 0; k < SAMPLE_PER_SYMBOL; k++) {
-                // Sample and compare with the adjacent next sample.
-                int I0 = dst_buffer.p[samples_eaten + k].real();
-                int Q0 = dst_buffer.p[samples_eaten + k].imag();
-                int I1 = dst_buffer.p[samples_eaten + k + 1].real();
-                int Q1 = dst_buffer.p[samples_eaten + k + 1].imag();
-
-                int phaseDiff = (I0 * Q1 - I1 * Q0);  // Positive = one direction, negative = the other
-                phaseSum += phaseDiff;
+                phaseDiff += get_phase_diff(dst_buffer.p[samples_eaten + k], dst_buffer.p[samples_eaten + k + 1]);
             }
 
-            bool bitDecision = (phaseSum > 0);
+            bool bitDecision = (phaseDiff > 0);
 
             rb_buf[packet_index] = rb_buf[packet_index] | (bitDecision << j);
 

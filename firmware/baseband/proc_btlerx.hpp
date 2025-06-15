@@ -82,6 +82,7 @@ class BTLERxProcessor : public BasebandProcessor {
 
     static constexpr size_t baseband_fs = 4000000;
 
+    float get_phase_diff(const complex16_t &sample0, const complex16_t &sample1);
     uint_fast32_t crc_update(uint_fast32_t crc, const void* data, size_t data_len);
     uint_fast32_t crc24_byte(uint8_t* byte_in, int num_byte, uint32_t init_hex);
     bool crc_check(uint8_t* tmp_byte, int body_len, uint32_t crc_init);

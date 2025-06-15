@@ -25,8 +25,13 @@
  #include "proc_fsk_rx.hpp"
  #include "portapack_shared_memory.hpp"
  #include "sine_table_int8.hpp"
+ #include "message.hpp"
  
  #include "event_m4.hpp"
+
+ #ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 float FSKRxProcessor::detect_peak_power(const buffer_c8_t& buffer, int N) 
 {
@@ -55,7 +60,7 @@ void FSKRxProcessor::agc_correct_iq(const buffer_c8_t& buffer, int N, float meas
     float power_db = 10.0f * log10f(measured_power / noise_floor);
     float error_db = target_power_db - power_db;
 
-    if (!error_db)
+    if (error_db <= 0)
     {
         return;
     }
@@ -68,139 +73,176 @@ void FSKRxProcessor::agc_correct_iq(const buffer_c8_t& buffer, int N, float meas
     }
 }
 
- void FSKRxProcessor::handleBeginState(const buffer_c16_t &decimator_out) {
-     int num_symbol_left = (int)decimator_out.count / SAMPLE_PER_SYMBOL;  // One buffer sample consist of I and Q.
+float FSKRxProcessor::get_phase_diff(const complex16_t &sample0, const complex16_t &sample1)
+{
+    // Calculate the phase difference between two samples.
+    float dI = sample1.real() * sample0.real() + sample1.imag() * sample0.imag();
+    float dQ = sample1.imag() * sample0.real() - sample1.real() * sample0.imag();
+    float phase_diff = atan2f(dQ, dI);
 
-     uint64_t validSyncWord = DEFAULT_SYNC_WORD;
+    return phase_diff;
+}
 
-     static uint64_t syncWordValue = 0;
-
-     int hit_idx = (-1);
-     bool foundSyncWord = false;
-
-     for (int i = 0; i < num_symbol_left * SAMPLE_PER_SYMBOL; i += SAMPLE_PER_SYMBOL) {
-
-        int phaseSum = 0;
-        int j = 0;
-
-        for (j = 0; j < SAMPLE_PER_SYMBOL - 1; j++) {
-            // Sample and compare with the adjacent next sample.
-            int I0 = dst_buffer.p[i + j].real();
-            int Q0 = dst_buffer.p[i + j].imag();
-            int I1 = dst_buffer.p[i + j + 1].real();
-            int Q1 = dst_buffer.p[i + j + 1].imag();
-
-            int phaseDiff = (I0 * Q1 - I1 * Q0);  // Positive = one direction, negative = the other
-            phaseSum += phaseDiff;
-        }
-
-        bool bitDecision = (phaseSum > 0);
-
-        syncWordValue = syncWordValue << 1 | bitDecision;
-
-        int errors = __builtin_popcountll(syncWordValue ^ validSyncWord) & 0xFFFFFFFFFFFFFFFF;
-
-        if (errors == 0)
+void FSKRxProcessor::demodulateFSKBits(const buffer_c16_t& decimator_out, int num_demod_byte) 
+{
+    for (; packet_index < num_demod_byte; packet_index++) 
+    {
+        for (; bit_index < 8; bit_index++) 
         {
-            hit_idx = i + SAMPLE_PER_SYMBOL;
-            foundSyncWord = true;
-
-            fskPacketData.syncWord = syncWordValue & 0xFFFFFFFFFFFFFFFF;
-            fskPacketData.max_dB = max_dB;
-
-            syncWordValue = 0;
-
-            break;
-        }
-
-        if (foundSyncWord) {
-            break;
-        }
-    }
-
-    if (hit_idx == -1) {
-        return;
-    }
-
-     samples_eaten = hit_idx;
-     parseState = Parse_State_PDU_Payload;
- }
- 
- void FSKRxProcessor::handlePDUPayloadState(const buffer_c16_t &decimator_out) {
-     int num_demod_byte = 360;
-     int num_samples_left = (int)decimator_out.count - samples_eaten; 
-     
-     sample_idx = samples_eaten;
-
-     static uint16_t packet_index = 0;
-     static uint8_t bit_index = 0;
-
-     if (!num_samples_left)
-     {
-        return;
-     }
-
-     for (; packet_index < num_demod_byte; packet_index++) {
-
-         for ( ; bit_index < 8; bit_index++) 
-         {
-            int phaseSum = 0;
-            int k = 0;
-
-            for (k = 0; k < SAMPLE_PER_SYMBOL - 1; k++) {
-                // Sample and compare with the adjacent next sample.
-                int I0 = dst_buffer.p[sample_idx + k].real();
-                int Q0 = dst_buffer.p[sample_idx + k].imag();
-                int I1 = dst_buffer.p[sample_idx + k + 1].real();
-                int Q1 = dst_buffer.p[sample_idx + k + 1].imag();
-
-                int phaseDiff = (I0 * Q1 - I1 * Q0);  // Positive = one direction, negative = the other
-                phaseSum += phaseDiff;
-            }
-
-            bool bitDecision = (phaseSum > 0);
-
-            rb_buf[packet_index] = rb_buf[packet_index] | (bitDecision << (7 - bit_index));
- 
-            sample_idx += SAMPLE_PER_SYMBOL;
-
-            if (sample_idx == (int)decimator_out.count)
+            if (samples_eaten >= (int)decimator_out.count) 
             {
-                if (bit_index == 7)
-                {
-                    bit_index = 0;
-                    packet_index++;
-                }
-                else
-                {
-                    bit_index++;
-                }
-
                 return;
             }
-         }
-         
+
+            float phaseSum = 0.0f;
+            for (int k = 0; k < SAMPLE_PER_SYMBOL - 1; ++k) 
+            {
+                float phase = get_phase_diff(
+                    decimator_out.p[samples_eaten + k],
+                    decimator_out.p[samples_eaten + k + 1]
+                );
+                phaseSum += phase;
+            }
+
+            phaseSum /= (SAMPLE_PER_SYMBOL - 1);
+            phaseSum -= frequency_offset;
+
+            bool bitDecision = (phaseSum > 0.0f);
+            rb_buf[packet_index] |= (bitDecision << (7 - bit_index));
+
+            input_bits[packet_index * 8 + bit_index] = phaseSum;
+
+            samples_eaten += SAMPLE_PER_SYMBOL;
+        }
+
         bit_index = 0;
-     }
+    }
+}
 
+void FSKRxProcessor::resetPreambleTracking() 
+{
+    frequency_offset = 0.0f;
+    frequency_offset_estimate = 0.0f;
+    phase_buffer_index = 0;
+    memset(phase_buffer, 0, sizeof(phase_buffer));
+}
 
-     for (int i = 0; i < num_demod_byte; i++)
-     {
-        fskPacketData.data[i] = rb_buf[i];
-     }
+void FSKRxProcessor::resetBitPacketIndex() 
+{
+    packet_index = 0;
+    bit_index = 0;
+}
 
-     memset(rb_buf, 0, sizeof(rb_buf));
+void FSKRxProcessor::handlePreambleState(const buffer_c16_t &decimator_out) 
+{
+    int num_symbols = (int)decimator_out.count / SAMPLE_PER_SYMBOL;
+    const uint32_t validPreamble = DEFAULT_PREAMBLE;
+    static uint32_t preambleValue = 0;
 
-     packet_index = 0;
-     bit_index = 0;
+    int hit_idx = -1;
 
-     fskPacketData.dataLen = num_demod_byte;
-     
-    FSKRxPacketMessage data_message{&fskPacketData};
-    shared_memory.application_queue.push(data_message);
+    for (int i = 0; i < num_symbols * SAMPLE_PER_SYMBOL; i += SAMPLE_PER_SYMBOL) 
+    {
+        float phaseSum = 0.0f;
+
+        for (int j = 0; j < SAMPLE_PER_SYMBOL - 1; j++) 
+        {
+            phaseSum += get_phase_diff(decimator_out.p[i + j], decimator_out.p[i + j + 1]);
+        }
+
+        phase_buffer[phase_buffer_index] = phaseSum / (SAMPLE_PER_SYMBOL - 1);
+        phase_buffer_index = (phase_buffer_index + 1) % ROLLING_WINDOW;
+
+        bool bitDecision = (phaseSum > 0.0f);
+        preambleValue = (preambleValue << 1) | bitDecision;
+
+        int errors = __builtin_popcountl(preambleValue ^ validPreamble) & 0xFFFFFFFF;
+
+        if (errors == 0) 
+        {
+            hit_idx = i + SAMPLE_PER_SYMBOL;
+            fskPacketData.syncWord = preambleValue;
+            fskPacketData.max_dB = max_dB;
+
+            for (int k = 0; k < ROLLING_WINDOW; k++) 
+            {
+                frequency_offset_estimate += phase_buffer[k];
+            }
+
+            frequency_offset = frequency_offset_estimate / ROLLING_WINDOW;
+
+            fskPacketData.frequency_offset_hz = (frequency_offset * decimated_fs) / (2.0f * M_PI);
+
+            resetPreambleTracking();
+
+            preambleValue = 0;
+            break;
+        }
+    }
+
+    if (hit_idx == -1) return;
+
+    samples_eaten = hit_idx;
+    parseState = Parse_State_Sync;
+}
+
+void FSKRxProcessor::handleSyncWordState(const buffer_c16_t &decimator_out) {
+    const int syncword_bytes = 4;
+    const uint32_t validSyncWord = DEFAULT_SYNC_WORD;
+
+    if ((int)decimator_out.count - samples_eaten <= 0) 
+    {
+        return;
+    }
+
+    demodulateFSKBits(decimator_out, syncword_bytes);
+
+    if (packet_index < syncword_bytes || bit_index != 0)
+    {
+        return;
+    } 
+
+    uint32_t receivedSyncWord = (rb_buf[0] << 24) | (rb_buf[1] << 16) | (rb_buf[2] << 8)  | rb_buf[3];
+
+    int errors = __builtin_popcountl(receivedSyncWord ^ validSyncWord) & 0xFFFFFFFF;
+
+    if (errors <=2) 
+    {
+        fskPacketData.syncWord = receivedSyncWord;
+        parseState = Parse_State_PDU_Payload;
+        memset(fskPacketData.data, 0, sizeof(fskPacketData.data));
+    } 
+    else 
+    {
+        parseState = Parse_State_Wait_For_Peak;
+    }
+
+    memset(rb_buf, 0, sizeof(rb_buf));
+    resetBitPacketIndex();
+}
+ 
+void FSKRxProcessor::handlePDUPayloadState(const buffer_c16_t &decimator_out) 
+{
+    if ((int)decimator_out.count - samples_eaten <= 0) 
+    {
+        return;
+    }
+
+    demodulateFSKBits(decimator_out, NUM_DATA_BYTE);
+
+    if (packet_index < NUM_DATA_BYTE || bit_index != 0) 
+    {
+        return;
+    }
+
+    LRWDecodeMessage decode_message;
+    shared_memory.application_queue.push(decode_message);
+
+    memset(rb_buf, 0, sizeof(rb_buf));
+    resetBitPacketIndex();
 
     parseState = Parse_State_Wait_For_Peak;
- }
+}
  
  void FSKRxProcessor::execute(const buffer_c8_t& buffer) 
  {
@@ -208,25 +250,30 @@ void FSKRxProcessor::agc_correct_iq(const buffer_c8_t& buffer, int N, float meas
 
     float power = detect_peak_power(buffer, buffer.count);
 
-    if (power > 1.0f)
+    if (power)
     {
         agc_correct_iq(buffer, buffer.count, power);
 
         if (parseState == Parse_State_Wait_For_Peak)
         {
-            parseState = Parse_State_Begin;
+            parseState = Parse_State_Preamble;
             fskPacketData.power = power;
             peak_timeout = 0;
+            resetPreambleTracking();
         }
     }
     else
     {
-        peak_timeout++;
-
-        if (peak_timeout == 255)
+        if (parseState != Parse_State_Wait_For_Peak)
         {
-            parseState = Parse_State_Wait_For_Peak;
-            peak_timeout = 0;
+            peak_timeout++;
+
+            // 960,000 fs / 2048 samples = 468.75 Hz, so 55 calls is about 0.053 seconds before timeout.
+            if (peak_timeout == 30) 
+            {
+                parseState = Parse_State_Wait_For_Peak;
+                peak_timeout = 0;
+            }
         }
     }
      
@@ -239,9 +286,12 @@ void FSKRxProcessor::agc_correct_iq(const buffer_c8_t& buffer, int N, float meas
 
     samples_eaten = 0;
 
-    // Handle parsing based on parseState
-    if (parseState == Parse_State_Begin) {
-        handleBeginState(decim_1_out);
+    if (parseState == Parse_State_Preamble) {
+        handlePreambleState(decim_1_out);
+    }
+
+    if (parseState == Parse_State_Sync) {
+        handleSyncWordState(decim_1_out);
     }
 
     if (parseState == Parse_State_PDU_Payload) {
@@ -250,14 +300,39 @@ void FSKRxProcessor::agc_correct_iq(const buffer_c8_t& buffer, int N, float meas
  }
  
  void FSKRxProcessor::on_message(const Message* const message) {
-     if (message->id == Message::ID::FSKRxConfigure)
-         configure(*reinterpret_cast<const FSKRxConfigureMessage*>(message));
+    if (message->id == Message::ID::FSKRxConfigure)
+    {
+        configure(*reinterpret_cast<const FSKRxConfigureMessage*>(message));
+    }
+    else if (message->id == Message::ID::LRWDecodedPacket) 
+    {
+        fskPacketData.dataLen = NUM_DECODED_BYTE;
+
+        turbo_decoder.decode(input_bits, output_bits, 5);
+        turbo_decoder.lfsr_dewhiten(output_bits);
+
+        // Copy the decoded bits to the packet data
+        for (int i = 0; i < NUM_DECODED_BYTE; i++) 
+        {
+            for (int j = 0; j < 8; j++) 
+            {
+                fskPacketData.data[i] |= (output_bits[i * 8 + j] << (7 - j));
+            }
+        }
+
+        FSKRxPacketMessage data_message{&fskPacketData};
+        shared_memory.application_queue.push(data_message);
+
+        memset(rb_buf, 0, sizeof(rb_buf));
+        memset(output_bits.data(), 0, output_bits.size() * sizeof(uint8_t));
+        memset(input_bits.data(), 0, input_bits.size() * sizeof(float));
+    }
  }
  
  void FSKRxProcessor::configure(const FSKRxConfigureMessage& message) {
      channel_number = message.channel_number;
-     decim_0.configure(taps_50k0_lrw_decim_0.taps);
-     decim_1.configure(taps_8k0_lrw_decim_1.taps);
+     decim_0.configure(taps_60k0_lrw_decim_0.taps);
+     decim_1.configure(taps_13k0_lrw_decim_1.taps);
 
      configured = true;
  }

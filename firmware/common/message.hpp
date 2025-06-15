@@ -135,6 +135,7 @@ class Message {
         NoaaAptRxStatusData = 78,
         NoaaAptRxImageData = 79,
         FSKPacket = 80,
+        LRWDecodedPacket = 81,
         MAX
     };
 
@@ -463,6 +464,7 @@ struct FskPacketData {
     uint16_t dataLen;
     uint64_t syncWord;
     float power;
+    float frequency_offset_hz;
 };
 
 class BLEPacketMessage : public Message {
@@ -486,6 +488,13 @@ class FSKRxPacketMessage : public Message {
  
      FskPacketData* packet{nullptr};
  };
+
+class LRWDecodeMessage : public Message {
+   public:
+    constexpr LRWDecodeMessage()
+        : Message{ID::LRWDecodedPacket} {
+    }
+};
 
 class CodedSquelchMessage : public Message {
    public:

@@ -46,46 +46,46 @@ namespace fs = std::filesystem;
 #define BLE_RX_LIST_SAVE_ERROR 3
 #define BLE_RX_ENTRY_SAVE_ERROR 4
 
-static void encoder_init(void)
-{
-	static bool first_time = true;
+// static void encoder_init(void)
+// {
+// 	static bool first_time = true;
 
-	// WTB: What happens if the encoder changes at runtime? Can this occur?
-	if (first_time)
-	{
-	    crc16_create_default();
-        lfsr_create_default();
-		tpc_encoder_create(TPC_72_40);
-	}
+// 	// WTB: What happens if the encoder changes at runtime? Can this occur?
+// 	if (first_time)
+// 	{
+// 	    crc16_create_default();
+//         lfsr_create_default();
+// 		tpc_encoder_create(TPC_72_40);
+// 	}
 
-	first_time = false;
-}
+// 	first_time = false;
+// }
 
-static void decoder_init(void)
-{
-	encoder_init();
-}
+// static void decoder_init(void)
+// {
+// 	encoder_init();
+// }
 
-static void decode_radio_packet(uint8_t *input_data, uint16_t msg_len, uint8_t *output_buf, uint16_t *outLen)
-{
-	uint8_t decode_in_len = tpc_decoder_get_input_length_bytes(TPC_72_40);
-	uint8_t decode_out_len = tpc_decoder_get_output_length_bytes(TPC_72_40);
-	uint8_t num_blocks = msg_len / decode_in_len;
-	num_blocks += msg_len % decode_in_len ? 1:0;
-	*outLen = num_blocks * decode_out_len;
+// static void decode_radio_packet(uint8_t *input_data, uint16_t msg_len, uint8_t *output_buf, uint16_t *outLen)
+// {
+// 	uint8_t decode_in_len = tpc_decoder_get_input_length_bytes(TPC_72_40);
+// 	uint8_t decode_out_len = tpc_decoder_get_output_length_bytes(TPC_72_40);
+// 	uint8_t num_blocks = msg_len / decode_in_len;
+// 	num_blocks += msg_len % decode_in_len ? 1:0;
+// 	*outLen = num_blocks * decode_out_len;
 
-	decoder_init();
+// 	decoder_init();
 
-    for(int i = 0; i < num_blocks; i++)
-    {
-        systematic_decode(TPC_72_40, input_data + decode_in_len * i, output_buf + decode_out_len * i);
-    }
+//     for(int i = 0; i < num_blocks; i++)
+//     {
+//         systematic_decode(TPC_72_40, input_data + decode_in_len * i, output_buf + decode_out_len * i);
+//     }
 
-    lfsr_reset();
-    lfsr_whiten_bytes(output_buf, output_buf, msg_len);
+//     lfsr_reset();
+//     lfsr_whiten_bytes(output_buf, output_buf, msg_len);
 
-	return;
-}
+// 	return;
+// }
 namespace ui {
 
 LRWRecentEntryDetailView::LRWRecentEntryDetailView(NavigationView& nav, const LRWRecentEntry& entry)
@@ -373,39 +373,60 @@ bool LRWRxView::saveFile(const std::filesystem::path& path) {
     return BLE_RX_NO_ERROR;
 }
 
-void LRWRxView::on_data_fsk(FskPacketData* packet) {
+void LRWRxView::on_packet_waiting(void)
+{
+    str_console = "Found Packet\r\n";
+    baseband::set_lrw_decode();
+}
 
-    uint16_t decoded_msg_len = 0;
-	uint8_t decoded_msg[LRW_MESSAGE_SIZE] = {0};
+void LRWRxView::on_data_fsk(FskPacketData* packet) 
+{
+    str_console = "RAW Packet Data [Receiving]: \r\n";
 
-    decode_radio_packet(packet->data, packet->dataLen, decoded_msg, &decoded_msg_len);
+    for (int i = 0; i < packet->dataLen; i += 32) 
+    {
+        str_console += "[ ";
+        for (int j = 0; j < 32 && (i + j) < packet->dataLen; j++) 
+        {
+            str_console += to_string_hex(packet->data[i + j]) + " ";
+        }
 
-    // str_console = "RAW Packet Data [Receiving]: \r\n";
+        str_console += "]\r\n";
+    }
 
-    // for (int i = 0; i < packet->dataLen; i += 32) {
-    //     str_console += "[ ";
-    //     for (int j = 0; j < 32 && (i + j) < packet->dataLen; j++) {
-    //         str_console += to_string_dec_int((int8_t)packet->data[i + j]) + " ";
-    //     }
-    //     str_console += "]\r\n";
-    // }
+    crc16_create_default();
+    crc16_process(packet->data, packet->dataLen - 2);
+    uint16_t checksum = crc16_checksum();
+    uint16_t expected_checksum = packet->data[packet->dataLen - 2] << 8 | packet->data[packet->dataLen - 1];
 
-    // for (int i = 0; i < decoded_msg_len; i += 32) {
-    //     str_console += "[ ";
-    //     for (int j = 0; j < 32 && (i + j) < decoded_msg_len; j++) {
-    //         str_console += to_string_hex(decoded_msg[i + j]) + " ";
-    //     }
-    //     str_console += "]\r\n";
-    // }
+    int errors = __builtin_popcount(checksum ^ expected_checksum) & 0xFFFF;
 
-    //str_console += to_string_decimal(packet->power, 6) + "\r\n";
+    if (errors) 
+    {
+        str_console += "CRC16 Checksum does not match, skipping packet.\r\n";
+        str_console += "Expected: " + to_string_hex(checksum) + ", Received: " + to_string_hex(expected_checksum) + "Errors: " + to_string_dec_uint(errors) + "\r\n";
+        str_console += "Frequency Offset: " + to_string_decimal(packet->frequency_offset_hz, 6) + "\r\n";
+        str_console += "Power: " + to_string_decimal(packet->power, 6) + "\r\n";
+    }
+    else
+    {
+        uint32_t device_ID = packet->data[2] << 24 | packet->data[3] << 16 | packet->data[4] << 8 | packet->data[5];
 
-    uint32_t device_ID = decoded_msg[2] << 24 | decoded_msg[3] << 16 | decoded_msg[4] << 8 | decoded_msg[5];
+        auto& entry = ::on_packet(recent, device_ID & 0xFFFFFFFF);
+        updateEntry(packet->data, entry);
 
-    auto& entry = ::on_packet(recent, device_ID & 0xFFFFFFFF);
-    updateEntry(decoded_msg, entry);
+        str_console += "CRC16 Errors: " + to_string_dec_uint(errors) + "\r\n";
+        str_console += "Frequency Offset: " + to_string_decimal(packet->frequency_offset_hz, 6) + "\r\n";
+        str_console += "Power: " + to_string_decimal(packet->power, 6) + "\r\n";
 
-    recent_entries_view.set_dirty();
+        recent_entries_view.set_dirty();
+    }
+
+    if (serial_logging) {
+        UsbSerialAsyncmsg::asyncmsg(str_console);  // new line handled there, no need here.
+    }
+
+    str_console = "";
 }
 
 void LRWRxView::on_filter_change(std::string value) {
@@ -514,12 +535,6 @@ void LRWRxView::updateEntry(uint8_t * decodedLrwData, LRWRecentEntry& entry) {
     }
 
     str_console += "Device ID: " + to_string_dec_uint(entry.deviceId) + "\r\n";
-
-    if (serial_logging) {
-        UsbSerialAsyncmsg::asyncmsg(str_console);  // new line handled there, no need here.
-    }
-
-    str_console = "";
 }
 
 void LRWRxView::set_parent_rect(const Rect new_parent_rect) {
