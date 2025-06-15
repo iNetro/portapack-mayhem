@@ -48,8 +48,8 @@ public:
 
         // Flat arrays: bm[size * 2 * num_states], fw[(size+1) * num_states], bw[(size+1) * num_states]
         static std::vector<float> bm(block_size * bm_stride, 0.0f);
-        static std::vector<float> fw((block_size + 1) * num_states, -INFINITY);
-        static std::vector<float> bw((block_size + 1) * num_states, -INFINITY);
+        static std::vector<float> fw((block_size + 1) * num_states, -1e5f);
+        static std::vector<float> bw((block_size + 1) * num_states, -1e5f);
         static std::vector<float> llrs(block_size);
 
         fw[0 * num_states + 0] = 0.0f;
@@ -99,7 +99,7 @@ public:
         }
 
         for (int i = 0; i < size; ++i) {
-            float lv0 = -INFINITY, lv1 = -INFINITY;
+            float lv0 = -1e5f, lv1 = -1e5f;
             int fw_off = i * num_states;
             int bw_off = (size - 1 - i) * num_states;
             for (int s = 0; s < num_states; ++s) {

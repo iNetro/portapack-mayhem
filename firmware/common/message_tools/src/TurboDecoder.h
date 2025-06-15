@@ -17,7 +17,6 @@ struct TurboParams {
     int m_inlen, m_outlen;
     std::vector<float> m_dec_output;
     std::vector<float> m_dec_input;
-    std::vector<uint8_t> m_soft_bits;
 };
 
 class TurboDecoder {
@@ -31,6 +30,7 @@ public:
     std::vector<float> m_row_output;
     std::vector<float> m_col_input;
     std::vector<float> m_col_output;
+    uint8_t m_soft_bits[320] = {0};
 
     TurboDecoder(const TurboParams& tp)
         : p(tp),
@@ -46,7 +46,6 @@ public:
 
         p.m_dec_input.resize(row_size * col_size);
         p.m_dec_output.resize(row_size * col_size);
-        p.m_soft_bits.resize(p.m_outlen);
     }
 
     std::vector<float>& execute(const std::vector<float>& input_block) {
@@ -113,36 +112,36 @@ public:
         return m_row_input;
     }
 
-    std::vector<uint8_t> extract(const std::vector<float>& block_llrs) 
+    void extract(const std::vector<float>& block_llrs, uint8_t* data) 
     {
-        static std::vector<uint8_t> bits(p.k_row * p.k_col, 0.0f);
-        bits.clear();
+        int out_idx = 0;
+
+        // First loop
         for (int j = p.b + p.q; j < p.k_row; ++j)
-            bits.push_back(block_llrs[j] > 0.0f ? 1 : 0);
+            data[out_idx++] = (block_llrs[j] > 0.0f ? 0x01 : 0x00);
+
+        // Second loop
         for (int i = 1; i < p.k_col; ++i)
             for (int j = 0; j < p.k_row; ++j)
-                bits.push_back(block_llrs[i * row_size + j] > 0.0f ? 1 : 0);
-        return bits;
+                data[out_idx++] = (block_llrs[i * row_size + j] > 0.0f ? 0x01 : 0x00);
     }
 
-    void decode(std::vector<float>& in, std::vector<uint8_t>& out, int n)
+    void decode(float * in, uint8_t* out, int n)
     {
         for (int i = 0; i < n; i++)
         {
-            std::memcpy(p.m_dec_input.data() + p.b, in.data() + i * p.m_inlen, (p.m_inlen - p.b) * sizeof(float));
-
+            std::memcpy(p.m_dec_input.data() + p.b, in + i * p.m_inlen, (p.m_inlen - p.b) * sizeof(float));
             auto& dec_out = execute(p.m_dec_input);
             p.m_dec_output = dec_out;
-            p.m_soft_bits = extract(p.m_dec_output);
 
-            for (int j = 0; j < p.m_outlen; j++)
-                out[i * p.m_outlen + j] = (p.m_soft_bits[j] > 0.0f) ? 0x01 : 0x00;
+            // Instead of using m_soft_bits, pass the proper slice of `out` buffer directly
+            extract(p.m_dec_output, out + i * p.m_outlen);
         }
     }
 
-    inline void lfsr_dewhiten(std::vector<uint8_t>& data, uint16_t seed = 0x1FF, uint16_t poly = 0x21, int order = 9) {
+    inline void lfsr_dewhiten(uint8_t * data, uint16_t dataLen, uint16_t seed = 0x1FF, uint16_t poly = 0x21, int order = 9) {
         uint16_t lfsr = seed;
-        int bitlen = data.size();
+        int bitlen = dataLen;
         for (int i = 0; i < bitlen; ++i) {
             uint8_t whiten_bit = lfsr & 1;
             uint8_t data_bit = data[i] & 1;

@@ -164,7 +164,7 @@ class LRWRxView : public View {
     void handle_entries_sort(uint8_t index);
     void handle_filter_options(uint8_t index);
     void parse_lrw_data(const uint8_t* data, uint8_t length, std::string& nameString, std::string& versionString);
-    void updateEntry(uint8_t * decodedLrwData, LRWRecentEntry& entry);
+    void updateEntry(FskPacketData * packet, LRWRecentEntry& entry);
     void on_packet_waiting(void);
 
     NavigationView& nav_;
@@ -337,14 +337,14 @@ class LRWRxView : public View {
 
     #define DEVICE_ID_COLUMN_LENGTH 10
     #define MSG_TYPE_COLUMN_LENGTH 5
+    #define OFFSET_COLUMN_LENGTH 7
     #define VERSION_COLUMN_LENGTH 5
-    #define DBM_COLUMN_LENGTH 4
 
     const RecentEntriesColumns columns{{
         {"Device ID", 10},
         {"Msg.", 5},
+        {"Offset", 7},
         {"Ver.", 5},
-        {"Dbm", 7},
     }};
 
     LRWRecentEntriesView recent_entries_view{columns, recent};

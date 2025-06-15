@@ -175,7 +175,7 @@ void LRWRecentEntryDetailView::paint(Painter& painter) {
         dataString = "";
         labelString = to_string_hex(i, 2);;
         for (int j = 0; j < 12 && (i + j) < totalVisableBytes; j++) {
-            dataString += to_string_hex(entry_.lrwData[i + j], 2);
+            dataString += to_string_hex(entry_.packetData.data[i + j], 2);
         }
         field_rect = draw_field(painter, field_rect, s, labelString, dataString);
     }
@@ -197,11 +197,14 @@ void RecentEntriesTable<LRWRecentEntries>::draw(
 
     std::string deviceIdStr = to_string_dec_uint(entry.deviceId);
     std::string msgTypeStr = to_string_dec_uint(entry.msgType);
+    std::string freqOffsetStr = to_string_dec_int(entry.packetData.frequency_offset_hz, 0);
     truncate(deviceIdStr, DEVICE_ID_COLUMN_LENGTH);
     truncate(msgTypeStr, MSG_TYPE_COLUMN_LENGTH);
+    truncate(freqOffsetStr, OFFSET_COLUMN_LENGTH);
 
     line = deviceIdStr + LRWRxView::pad_string_with_spaces(DEVICE_ID_COLUMN_LENGTH - deviceIdStr.length() + 1);
     line += msgTypeStr + LRWRxView::pad_string_with_spaces(MSG_TYPE_COLUMN_LENGTH - msgTypeStr.length() + 1);
+    line += freqOffsetStr + LRWRxView::pad_string_with_spaces(OFFSET_COLUMN_LENGTH - freqOffsetStr.length() + 1);
 
     painter.draw_string(target_rect.location(), style, line);
 }
@@ -413,7 +416,7 @@ void LRWRxView::on_data_fsk(FskPacketData* packet)
         uint32_t device_ID = packet->data[2] << 24 | packet->data[3] << 16 | packet->data[4] << 8 | packet->data[5];
 
         auto& entry = ::on_packet(recent, device_ID & 0xFFFFFFFF);
-        updateEntry(packet->data, entry);
+        updateEntry(packet, entry);
 
         str_console += "CRC16 Errors: " + to_string_dec_uint(errors) + "\r\n";
         str_console += "Frequency Offset: " + to_string_decimal(packet->frequency_offset_hz, 6) + "\r\n";
@@ -526,13 +529,15 @@ void LRWRxView::handle_filter_options(uint8_t index) {
     }
 }
 
-void LRWRxView::updateEntry(uint8_t * decodedLrwData, LRWRecentEntry& entry) {
+void LRWRxView::updateEntry(FskPacketData * packet, LRWRecentEntry& entry) {
 
-    entry.msgType = decodedLrwData[6] << 8 | decodedLrwData[7];
+    entry.msgType = packet->data[6] << 8 | packet->data[7];
 
     for (int i = 0; i < LRW_MESSAGE_SIZE / 3; i++) {
-        entry.lrwData[i] = decodedLrwData[i];
+        entry.packetData.data[i] = packet->data[i];
     }
+
+    entry.packetData.frequency_offset_hz = packet->frequency_offset_hz;
 
     str_console += "Device ID: " + to_string_dec_uint(entry.deviceId) + "\r\n";
 }

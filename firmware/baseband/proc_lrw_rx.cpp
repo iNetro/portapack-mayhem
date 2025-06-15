@@ -83,7 +83,7 @@ float LRWRxProcessor::get_phase_diff(const complex16_t &sample0, const complex16
     return phase_diff;
 }
 
-void LRWRxProcessor::demodulateFSKBits(const buffer_c16_t& decimator_out, int num_demod_byte) 
+void LRWRxProcessor::demodulateFSKBits(const buffer_c16_t& decimator_out, int num_demod_byte, bool handle_sync) 
 {
     for (; packet_index < num_demod_byte; packet_index++) 
     {
@@ -108,9 +108,15 @@ void LRWRxProcessor::demodulateFSKBits(const buffer_c16_t& decimator_out, int nu
             phaseSum -= frequency_offset;
 
             bool bitDecision = (phaseSum > 0.0f);
-            rb_buf[packet_index] |= (bitDecision << (7 - bit_index));
 
-            input_bits[packet_index * 8 + bit_index] = phaseSum;
+            if (handle_sync)
+            {
+                rb_buf[packet_index] |= (bitDecision << (7 - bit_index));
+            }
+            else
+            {
+                input_bits[decode_index][packet_index * 8 + bit_index] = phaseSum;
+            }
 
             samples_eaten += SAMPLE_PER_SYMBOL;
         }
@@ -195,7 +201,7 @@ void LRWRxProcessor::handleSyncWordState(const buffer_c16_t &decimator_out) {
         return;
     }
 
-    demodulateFSKBits(decimator_out, syncword_bytes);
+    demodulateFSKBits(decimator_out, syncword_bytes, true);
 
     if (packet_index < syncword_bytes || bit_index != 0)
     {
@@ -206,7 +212,7 @@ void LRWRxProcessor::handleSyncWordState(const buffer_c16_t &decimator_out) {
 
     int errors = __builtin_popcountl(receivedSyncWord ^ validSyncWord) & 0xFFFFFFFF;
 
-    if (errors <=2) 
+    if (errors <= 4) 
     {
         fskPacketData.syncWord = receivedSyncWord;
         parseState = Parse_State_PDU_Payload;
@@ -228,7 +234,7 @@ void LRWRxProcessor::handlePDUPayloadState(const buffer_c16_t &decimator_out)
         return;
     }
 
-    demodulateFSKBits(decimator_out, NUM_DATA_BYTE);
+    demodulateFSKBits(decimator_out, NUM_DATA_BYTE, false);
 
     if (packet_index < NUM_DATA_BYTE || bit_index != 0) 
     {
@@ -308,15 +314,15 @@ void LRWRxProcessor::handlePDUPayloadState(const buffer_c16_t &decimator_out)
     {
         fskPacketData.dataLen = NUM_DECODED_BYTE;
 
-        turbo_decoder.decode(input_bits, output_bits, 5);
-        turbo_decoder.lfsr_dewhiten(output_bits);
+        turbo_decoder.decode(input_bits[decode_index], output_bits[decode_index], 5);
+        turbo_decoder.lfsr_dewhiten(output_bits[decode_index], sizeof(output_bits[decode_index]));
 
         // Copy the decoded bits to the packet data
         for (int i = 0; i < NUM_DECODED_BYTE; i++) 
         {
             for (int j = 0; j < 8; j++) 
             {
-                fskPacketData.data[i] |= (output_bits[i * 8 + j] << (7 - j));
+                fskPacketData.data[i] |= (output_bits[decode_index][i * 8 + j] << (7 - j));
             }
         }
 
@@ -324,8 +330,10 @@ void LRWRxProcessor::handlePDUPayloadState(const buffer_c16_t &decimator_out)
         shared_memory.application_queue.push(data_message);
 
         memset(rb_buf, 0, sizeof(rb_buf));
-        memset(output_bits.data(), 0, output_bits.size() * sizeof(uint8_t));
-        memset(input_bits.data(), 0, input_bits.size() * sizeof(float));
+        memset(output_bits[decode_index], 0, sizeof(output_bits[decode_index]));
+        memset(input_bits[decode_index], 0, sizeof(input_bits[decode_index]));
+
+        //decode_index = !decode_index;
     }
  }
  

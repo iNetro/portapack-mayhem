@@ -52,7 +52,8 @@
         static constexpr int NUM_SYNC_WORD_BYTE{4};
         static constexpr int NUM_DATA_BYTE{360};
         static constexpr int NUM_DECODED_BYTE{200};
-        static constexpr int ROLLING_WINDOW = 32;
+        static constexpr int ROLLING_WINDOW {32};
+        static constexpr uint8_t MAX_BUFFERS {1};
  
      enum Parse_State {
          Parse_State_Wait_For_Peak = 0,
@@ -67,7 +68,7 @@
      float detect_peak_power(const buffer_c8_t& buffer, int N);
      void agc_correct_iq(const buffer_c8_t& buffer, int N, float measured_power);
      float get_phase_diff(const complex16_t &sample0, const complex16_t &sample1);
-     void demodulateFSKBits(const buffer_c16_t& decimator_out, int num_demod_byte);
+     void demodulateFSKBits(const buffer_c16_t& decimator_out, int num_demod_byte, bool hande);
      void resetPreambleTracking();
      void resetBitPacketIndex();
 
@@ -80,11 +81,12 @@
          dst.data(),
          dst.size()};
  
-     static constexpr int RB_SIZE = NUM_DATA_BYTE;
+     static constexpr int RB_SIZE = NUM_SYNC_WORD_BYTE;
      uint8_t rb_buf[RB_SIZE];
 
-     std::vector<float> input_bits = std::vector<float>(NUM_DATA_BYTE * 8, 0.0f);
-     std::vector<uint8_t> output_bits = std::vector<uint8_t>(320 * 8, 0);
+     //std::vector<float> input_bits = std::vector<float>(NUM_DATA_BYTE * 8, 0.0f);
+     float input_bits[MAX_BUFFERS][NUM_DATA_BYTE * 8];
+     uint8_t output_bits[MAX_BUFFERS][NUM_DECODED_BYTE * 8] = {{0}};
     
      TurboDecoder turbo_decoder{
         {
@@ -99,12 +101,11 @@
              .row_poly = 123,
              .col_poly = 123,
              .scale_row = 0.25f,
-             .num_iter = 6,
+             .num_iter = 3,
              .m_inlen = 576,
              .m_outlen = 320,
              .m_dec_output = std::vector<float>(576, 0.0f),
              .m_dec_input = std::vector<float>(576, 0.0f),
-             .m_soft_bits = std::vector<uint8_t>(320, 0)
          }
     };
  
@@ -141,6 +142,7 @@
      
      uint16_t packet_index {0};
      uint8_t bit_index {0};
+     bool decode_index {0};
 
      /* NB: Threads should be the last members in the class definition. */
      BasebandThread baseband_thread{baseband_fs, this, baseband::Direction::Receive};
