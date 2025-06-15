@@ -519,7 +519,6 @@ void BLERxView::file_error() {
 
 BLERxView::BLERxView(NavigationView& nav)
     : nav_{nav} {
-
     baseband::run_image(portapack::spi_flash::image_tag_btle_rx);
 
     add_children({&rssi,
@@ -849,18 +848,17 @@ void BLERxView::on_data(BlePacketData* packet) {
 
         // Log at End of Packet.
         if (logger && logging) {
-
             auto packetData = BleRecentEntryDetailView::build_packet(entry);
 
             std::string macAddressStr = packetData.macAddress;
             std::string advertisementDataStr = packetData.advertisementData;
             std::string packetCountStr = packetData.packetCount;
-        
+
             std::string packetString = macAddressStr + ' ' + advertisementDataStr + ' ' + packetCountStr;
 
             logger->log_raw_data(packetString);
         }
-    
+
         if (serial_logging) {
             UsbSerialAsyncmsg::asyncmsg(str_console);  // new line handled there, no need here.
         }

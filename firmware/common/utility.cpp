@@ -92,12 +92,11 @@ float mag2_to_dbv_norm(const float mag2) {
 }
 
 // Function to calculate dBm and normalize based on LNA and VGA settings
-float mag2_to_dbm_8bit_normalized(int8_t real, int8_t imag, float v_ref, float R) 
-{
+float mag2_to_dbm_8bit_normalized(int8_t real, int8_t imag, float v_ref, float R) {
     // Step 1: Normalize IQ values (convert 8-bit signed to -1.0 to +1.0)
     float I = real / 127.0f;  // Map the 8-bit real part to the [-1, 1] range
     float Q = imag / 127.0f;  // Map the 8-bit imaginary part to the [-1, 1] range
-    
+
     // Step 2: Compute the magnitude squared (I^2 + Q^2)
     float mag2 = I * I + Q * Q;
 
@@ -108,7 +107,7 @@ float mag2_to_dbm_8bit_normalized(int8_t real, int8_t imag, float v_ref, float R
     // Step 4: Convert the power to dBm (multiply by 1000 to convert watts to milliwatts)
     float power_milliwatts = power_watts * 1000.0f;
     float dbm_measured = 10.0f * log10f(power_milliwatts);
-    
+
     return dbm_measured;
 }
 

@@ -20,7 +20,7 @@ struct TurboParams {
 };
 
 class TurboDecoder {
-public:
+   public:
     TurboParams p;
     Trellis row_trellis, col_trellis;
 
@@ -35,8 +35,7 @@ public:
     TurboDecoder(const TurboParams& tp)
         : p(tp),
           row_trellis(tp.row_poly, tp.gk_row, p.k_row + p.gk_row - 1),
-          col_trellis(tp.col_poly, tp.gk_col, p.k_col + p.gk_col - 1)
-    {
+          col_trellis(tp.col_poly, tp.gk_col, p.k_col + p.gk_col - 1) {
         row_size = p.k_row + p.gk_row - 1;
         col_size = p.k_col + p.gk_col - 1;
         m_row_input.resize(row_size * col_size);
@@ -112,8 +111,7 @@ public:
         return m_row_input;
     }
 
-    void extract(const std::vector<float>& block_llrs, uint8_t* data) 
-    {
+    void extract(const std::vector<float>& block_llrs, uint8_t* data) {
         int out_idx = 0;
 
         // First loop
@@ -126,10 +124,8 @@ public:
                 data[out_idx++] = (block_llrs[i * row_size + j] > 0.0f ? 0x01 : 0x00);
     }
 
-    void decode(float * in, uint8_t* out, int n)
-    {
-        for (int i = 0; i < n; i++)
-        {
+    void decode(float* in, uint8_t* out, int n) {
+        for (int i = 0; i < n; i++) {
             std::memcpy(p.m_dec_input.data() + p.b, in + i * p.m_inlen, (p.m_inlen - p.b) * sizeof(float));
             auto& dec_out = execute(p.m_dec_input);
             p.m_dec_output = dec_out;
@@ -139,7 +135,7 @@ public:
         }
     }
 
-    inline void lfsr_dewhiten(uint8_t * data, uint16_t dataLen, uint16_t seed = 0x1FF, uint16_t poly = 0x21, int order = 9) {
+    inline void lfsr_dewhiten(uint8_t* data, uint16_t dataLen, uint16_t seed = 0x1FF, uint16_t poly = 0x21, int order = 9) {
         uint16_t lfsr = seed;
         int bitlen = dataLen;
         for (int i = 0; i < bitlen; ++i) {
@@ -157,4 +153,4 @@ public:
     }
 };
 
-#endif // TURBO_DECODER_H
+#endif  // TURBO_DECODER_H

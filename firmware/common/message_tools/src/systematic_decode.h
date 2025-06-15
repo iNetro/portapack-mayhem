@@ -20,10 +20,10 @@ extern "C" {
 //  _scheme         :   TPC scheme
 //  _in             :   input byte array of length n
 //  _out            :   output byte array of length k
-void systematic_decode(tpc_scheme _scheme, const uint8_t * in, uint8_t * out);
+void systematic_decode(tpc_scheme _scheme, const uint8_t* in, uint8_t* out);
 
 #ifdef __cplusplus
-} // extern "C"
+}  // extern "C"
 #endif
 
-#endif // #ifndef __SYSTEMATIC_DECODE_H__
+#endif  // #ifndef __SYSTEMATIC_DECODE_H__

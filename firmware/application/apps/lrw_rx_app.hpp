@@ -70,7 +70,7 @@ struct LRWRecentEntry {
         : deviceId{deviceId},
           msgType{},
           dbValue{},
-          lrwData{}, 
+          lrwData{},
           packetData{} {
     }
 
@@ -93,14 +93,14 @@ class LRWRecentEntryDetailView : public View {
     void focus() override;
     void paint(Painter&) override;
     LRWTxPacket build_packet(LRWRecentEntry entry_);
-    
+
    private:
     NavigationView& nav_;
     LRWRecentEntry entry_{};
-    //void on_save_file(const std::string value, BLETxPacket packetToSave);
-    //bool saveFile(const std::filesystem::path& path, BLETxPacket packetToSave);
-    //std::string packetFileBuffer{};
-    //std::filesystem::path packet_save_path{blerx_dir / u"Lists/????.csv"};
+    // void on_save_file(const std::string value, BLETxPacket packetToSave);
+    // bool saveFile(const std::filesystem::path& path, BLETxPacket packetToSave);
+    // std::string packetFileBuffer{};
+    // std::filesystem::path packet_save_path{blerx_dir / u"Lists/????.csv"};
 
     static constexpr uint8_t total_data_lines{5};
 
@@ -164,17 +164,17 @@ class LRWRxView : public View {
     void handle_entries_sort(uint8_t index);
     void handle_filter_options(uint8_t index);
     void parse_lrw_data(const uint8_t* data, uint8_t length, std::string& nameString, std::string& versionString);
-    void updateEntry(FskPacketData * packet, LRWRecentEntry& entry);
+    void updateEntry(FskPacketData* packet, LRWRecentEntry& entry);
     void on_packet_waiting(void);
 
     NavigationView& nav_;
 
     RxRadioState radio_state_{
-        902075000,   /* frequency */
-        960000,      /* bandwidth */
-        960000,      /* sampling rate */
+        902075000, /* frequency */
+        960000,    /* bandwidth */
+        960000,    /* sampling rate */
         ReceiverModel::Mode::Capture};
-    
+
     uint8_t channel_index{0};
     uint8_t sort_index{0};
     uint8_t filter_index{0};
@@ -335,10 +335,10 @@ class LRWRxView : public View {
     LRWRecentEntries recent{};
     LRWRecentEntries tempList{};
 
-    #define DEVICE_ID_COLUMN_LENGTH 10
-    #define MSG_TYPE_COLUMN_LENGTH 5
-    #define OFFSET_COLUMN_LENGTH 7
-    #define VERSION_COLUMN_LENGTH 5
+#define DEVICE_ID_COLUMN_LENGTH 10
+#define MSG_TYPE_COLUMN_LENGTH 5
+#define OFFSET_COLUMN_LENGTH 7
+#define VERSION_COLUMN_LENGTH 5
 
     const RecentEntriesColumns columns{{
         {"Device ID", 10},

@@ -76,13 +76,13 @@ namespace fs = std::filesystem;
 
 // 	decoder_init();
 
-//     for(int i = 0; i < num_blocks; i++)
-//     {
-//         systematic_decode(TPC_72_40, input_data + decode_in_len * i, output_buf + decode_out_len * i);
-//     }
+// for(int i = 0; i < num_blocks; i++)
+// {
+//     systematic_decode(TPC_72_40, input_data + decode_in_len * i, output_buf + decode_out_len * i);
+// }
 
-//     lfsr_reset();
-//     lfsr_whiten_bytes(output_buf, output_buf, msg_len);
+// lfsr_reset();
+// lfsr_whiten_bytes(output_buf, output_buf, msg_len);
 
 // 	return;
 // }
@@ -173,7 +173,8 @@ void LRWRecentEntryDetailView::paint(Painter& painter) {
 
     for (int i = 0; i < totalVisableBytes; i += 12) {
         dataString = "";
-        labelString = to_string_hex(i, 2);;
+        labelString = to_string_hex(i, 2);
+        ;
         for (int j = 0; j < 12 && (i + j) < totalVisableBytes; j++) {
             dataString += to_string_hex(entry_.packetData.data[i + j], 2);
         }
@@ -217,7 +218,7 @@ std::string LRWRxView::pad_string_with_spaces(int snakes) {
 std::uint64_t LRWRxView::get_freq_by_channel_number_fsk(uint8_t channel_number) {
     uint64_t freq_hz;
 
-    freq_hz = 902'075'000ull + (channel_number) * 25'000ull;
+    freq_hz = 902'075'000ull + (channel_number)*25'000ull;
 
     return freq_hz;
 }
@@ -232,7 +233,6 @@ void LRWRxView::file_error() {
 
 LRWRxView::LRWRxView(NavigationView& nav)
     : nav_{nav} {
-
     baseband::run_image(portapack::spi_flash::image_tag_lrwrx);
 
     add_children({&rssi,
@@ -376,21 +376,17 @@ bool LRWRxView::saveFile(const std::filesystem::path& path) {
     return BLE_RX_NO_ERROR;
 }
 
-void LRWRxView::on_packet_waiting(void)
-{
+void LRWRxView::on_packet_waiting(void) {
     str_console = "Found Packet\r\n";
     baseband::set_lrw_decode();
 }
 
-void LRWRxView::on_data_fsk(FskPacketData* packet) 
-{
+void LRWRxView::on_data_fsk(FskPacketData* packet) {
     str_console = "RAW Packet Data [Receiving]: \r\n";
 
-    for (int i = 0; i < packet->dataLen; i += 32) 
-    {
+    for (int i = 0; i < packet->dataLen; i += 32) {
         str_console += "[ ";
-        for (int j = 0; j < 32 && (i + j) < packet->dataLen; j++) 
-        {
+        for (int j = 0; j < 32 && (i + j) < packet->dataLen; j++) {
             str_console += to_string_hex(packet->data[i + j]) + " ";
         }
 
@@ -404,15 +400,12 @@ void LRWRxView::on_data_fsk(FskPacketData* packet)
 
     int errors = __builtin_popcount(checksum ^ expected_checksum) & 0xFFFF;
 
-    if (errors) 
-    {
+    if (errors) {
         str_console += "CRC16 Checksum does not match, skipping packet.\r\n";
         str_console += "Expected: " + to_string_hex(checksum) + ", Received: " + to_string_hex(expected_checksum) + "Errors: " + to_string_dec_uint(errors) + "\r\n";
         str_console += "Frequency Offset: " + to_string_decimal(packet->frequency_offset_hz, 6) + "\r\n";
         str_console += "Power: " + to_string_decimal(packet->power, 6) + "\r\n";
-    }
-    else
-    {
+    } else {
         uint32_t device_ID = packet->data[2] << 24 | packet->data[3] << 16 | packet->data[4] << 8 | packet->data[5];
 
         auto& entry = ::on_packet(recent, device_ID & 0xFFFFFFFF);
@@ -529,8 +522,7 @@ void LRWRxView::handle_filter_options(uint8_t index) {
     }
 }
 
-void LRWRxView::updateEntry(FskPacketData * packet, LRWRecentEntry& entry) {
-
+void LRWRxView::updateEntry(FskPacketData* packet, LRWRecentEntry& entry) {
     entry.msgType = packet->data[6] << 8 | packet->data[7];
 
     for (int i = 0; i < LRW_MESSAGE_SIZE / 3; i++) {

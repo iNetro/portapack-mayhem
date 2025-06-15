@@ -97,7 +97,7 @@ bool LRWTxView::hasValidHexPairs(const std::string& str, int totalPairs) {
 std::uint64_t LRWTxView::get_freq_by_channel_number_fsk(uint8_t channel_number) {
     uint64_t freq_hz;
 
-    freq_hz = 902'073'750ull + (channel_number) * 25'000ull;
+    freq_hz = 902'073'750ull + (channel_number)*25'000ull;
 
     return freq_hz;
 }
@@ -497,7 +497,6 @@ void LRWTxView::on_save_file(const std::string value) {
 }
 
 void LRWTxView::update_current_packet(LRWTxPacket packet, uint32_t currentIndex) {
-
     std::vector<std::string> strings = splitIntoStrings(packet.advertisementData);
 
     text_packet_index.set(to_string_dec_uint(current_packet));

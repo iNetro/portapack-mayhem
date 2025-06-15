@@ -479,15 +479,15 @@ class BLEPacketMessage : public Message {
 };
 
 class FSKRxPacketMessage : public Message {
-    public:
-     constexpr FSKRxPacketMessage(
+   public:
+    constexpr FSKRxPacketMessage(
         FskPacketData* packet)
-         : Message{ID::FSKPacket},
-           packet{packet} {
-     }
- 
-     FskPacketData* packet{nullptr};
- };
+        : Message{ID::FSKPacket},
+          packet{packet} {
+    }
+
+    FskPacketData* packet{nullptr};
+};
 
 class LRWDecodeMessage : public Message {
    public:

@@ -27,8 +27,7 @@
 
 #include "event_m4.hpp"
 
-float BTLERxProcessor::get_phase_diff(const complex16_t &sample0, const complex16_t &sample1)
-{
+float BTLERxProcessor::get_phase_diff(const complex16_t& sample0, const complex16_t& sample1) {
     // Calculate the phase difference between two samples.
     float dI = sample1.real() * sample0.real() + sample1.imag() * sample0.imag();
     float dQ = sample1.imag() * sample0.real() - sample1.real() * sample0.imag();
@@ -143,7 +142,6 @@ void BTLERxProcessor::handleBeginState() {
     bool foundAccessAddress = false;
 
     for (int i = samples_eaten; i < num_samples_left; i += SAMPLE_PER_SYMBOL) {
-
         float phaseDiff = 0;
 
         for (int j = 0; j < SAMPLE_PER_SYMBOL; j++) {
@@ -156,8 +154,7 @@ void BTLERxProcessor::handleBeginState() {
 
         int errors = __builtin_popcount(accesssAddress ^ validAccessAddress) & 0xFFFFFFFF;
 
-        if (!errors)
-        {
+        if (!errors) {
             hit_idx = (i - (demod_buf_len - 1) * SAMPLE_PER_SYMBOL);
             foundAccessAddress = true;
             break;
@@ -178,7 +175,7 @@ void BTLERxProcessor::handleBeginState() {
 
     samples_eaten += (8 * NUM_ACCESS_ADDR_BYTE * SAMPLE_PER_SYMBOL);  // move to the beginning of PDU header
 
-    num_samples_left =- samples_eaten;
+    num_samples_left = -samples_eaten;
 
     parseState = Parse_State_PDU_Header;
 }
@@ -196,7 +193,6 @@ void BTLERxProcessor::handlePDUHeaderState() {
         rb_buf[packet_index] = 0;
 
         for (int j = 0; j < 8; j++) {
-
             float phaseDiff = 0;
             int k = 0;
 
@@ -242,7 +238,6 @@ void BTLERxProcessor::handlePDUPayloadState() {
         rb_buf[packet_index] = 0;
 
         for (int j = 0; j < 8; j++) {
-
             float phaseDiff = 0;
             int k = 0;
 
@@ -320,15 +315,13 @@ void BTLERxProcessor::execute(const buffer_c8_t& buffer) {
 
     auto* ptr = buffer.p;
     auto* end = &buffer.p[buffer.count];
-    
-    while (ptr < end) 
-    {
+
+    while (ptr < end) {
         float dbm = mag2_to_dbm_8bit_normalized(ptr->real(), ptr->imag(), 1.0f, 50.0f);
 
         ptr++;
-        
-        if (dbm > max_dB) 
-        {
+
+        if (dbm > max_dB) {
             max_dB = dbm;
             real = ptr->real();
             imag = ptr->imag();

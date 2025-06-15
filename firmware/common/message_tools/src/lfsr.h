@@ -15,12 +15,12 @@ extern "C" {
 
 // basic lfsr object
 typedef struct lfsr_s {
-    uint32_t mask;  // polynomial mask
-    uint32_t seed;  // initial seed value
-    uint16_t order; // polynomial order
+    uint32_t mask;   // polynomial mask
+    uint32_t seed;   // initial seed value
+    uint16_t order;  // polynomial order
 
-    uint16_t shift; // shift amount (order - 1)
-    uint32_t reg;   // shift register
+    uint16_t shift;  // shift amount (order - 1)
+    uint32_t reg;    // shift register
 } lfsr;
 
 // Create an lfsr object.
@@ -63,10 +63,10 @@ uint8_t lfsr_whiten_byte(uint8_t _b);
 //  _in             :   input array
 //  _out            :   output array
 //  _len            :   array size
-void lfsr_whiten_bytes(const uint8_t *_in, uint8_t *_out, unsigned int _len);
+void lfsr_whiten_bytes(const uint8_t* _in, uint8_t* _out, unsigned int _len);
 
 #ifdef __cplusplus
-} // extern "C"
+}  // extern "C"
 #endif
 
-#endif // #ifndef __LFSR_H__
+#endif  // #ifndef __LFSR_H__

@@ -15,11 +15,11 @@ extern "C" {
 
 // crc16 basic object
 typedef struct crc16_s {
-    uint16_t    poly;       // polynomial mask
-    uint16_t    rem;        // initial remainder/seed
-    uint16_t    final_xor;  // final XOR value
+    uint16_t poly;       // polynomial mask
+    uint16_t rem;        // initial remainder/seed
+    uint16_t final_xor;  // final XOR value
 
-    uint16_t    reg;        // running checksum register
+    uint16_t reg;  // running checksum register
 } crc16;
 // Create a crc16 object.
 //  _poly           :   polynomial mask
@@ -56,10 +56,10 @@ void crc16_update(uint8_t _b);
 //  _q              :   crc16 object
 //  _in             :   input array
 //  _len            :   input array length
-void crc16_process(const uint8_t *_in, unsigned int _len);
+void crc16_process(const uint8_t* _in, unsigned int _len);
 
 #ifdef __cplusplus
-} // extern "C"
+}  // extern "C"
 #endif
 
-#endif // #ifndef __CRC16_H__
+#endif  // #ifndef __CRC16_H__

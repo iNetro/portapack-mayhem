@@ -59,7 +59,7 @@ class LRWTxView : public View {
     ~LRWTxView();
 
     void set_parent_rect(const Rect new_parent_rect) override;
-    void paint(Painter&) override {};
+    void paint(Painter&) override{};
 
     void focus() override;
 
@@ -88,8 +88,8 @@ class LRWTxView : public View {
     NavigationView& nav_;
     TxRadioState radio_state_{
         902'075'000 /* frequency */,
-        30000       /* bandwidth */,
-        30000       /* sampling rate */
+        30000 /* bandwidth */,
+        30000 /* sampling rate */
     };
     app_settings::SettingsManager settings_{
         "tx_lrw", app_settings::Mode::TX};

@@ -28,8 +28,7 @@
 
 #include <cstdint>
 
-void FSKTxProcessor::encode_radio_packet(uint8_t * pau8_BufferIn, uint16_t u16_InLength, uint16_t * pu16_OutLength)
-{
+void FSKTxProcessor::encode_radio_packet(uint8_t* pau8_BufferIn, uint16_t u16_InLength, uint16_t* pu16_OutLength) {
     uint16_t u16_LengthCRC;
     uint16_t u16_TPC_InLength;
     uint16_t u16_TPC_OutLength;
@@ -39,26 +38,25 @@ void FSKTxProcessor::encode_radio_packet(uint8_t * pau8_BufferIn, uint16_t u16_I
     uint16_t u16_EncodingInLength;
     uint16_t u16_EncoderOutLength;
 
-	// Set default out length
-	*pu16_OutLength = 0;
+    // Set default out length
+    *pu16_OutLength = 0;
 
     crc16_create_default();
     lfsr_create_default();
     tpc_encoder_create(TPC_72_40);
 
-	u16_LengthCRC = 2;
+    u16_LengthCRC = 2;
 
-	u16_TPC_InLength = (uint16_t)tpc_encoder_get_input_length_bytes();
-	u16_TPC_OutLength = (uint16_t)tpc_encoder_get_output_length_bytes();
+    u16_TPC_InLength = (uint16_t)tpc_encoder_get_input_length_bytes();
+    u16_TPC_OutLength = (uint16_t)tpc_encoder_get_output_length_bytes();
 
-	u16_BlockCount = (u16_InLength + u16_LengthCRC) / u16_TPC_InLength;
+    u16_BlockCount = (u16_InLength + u16_LengthCRC) / u16_TPC_InLength;
 
-	u16_PadLength = 0;
+    u16_PadLength = 0;
     u16_RemnantLength = (u16_InLength + u16_LengthCRC) % u16_TPC_InLength;
-    if(u16_RemnantLength)
-    {
-    	u16_BlockCount++;
-    	u16_PadLength = u16_TPC_InLength - u16_RemnantLength;
+    if (u16_RemnantLength) {
+        u16_BlockCount++;
+        u16_PadLength = u16_TPC_InLength - u16_RemnantLength;
     }
 
     u16_EncodingInLength = u16_BlockCount * u16_TPC_InLength;
@@ -66,8 +64,7 @@ void FSKTxProcessor::encode_radio_packet(uint8_t * pau8_BufferIn, uint16_t u16_I
 
     memcpy(encodedDataIn, pau8_BufferIn, u16_InLength);
     memset(encodedDataOut, 0, sizeof(encodedDataOut));
-    if(u16_EncodingInLength > u16_InLength)
-    {
+    if (u16_EncodingInLength > u16_InLength) {
         memset(encodedDataIn + u16_InLength, 0, (u16_EncodingInLength - u16_InLength));
     }
 
@@ -78,17 +75,16 @@ void FSKTxProcessor::encode_radio_packet(uint8_t * pau8_BufferIn, uint16_t u16_I
     crc16_reset();
     crc16_process(encodedDataIn, u16_PayloadLength);
     u16_Checksum = crc16_checksum();
-    encodedDataIn[u16_PayloadLength] = (u16_Checksum >> 8) & 0xff;   // upper byte
-    encodedDataIn[u16_PayloadLength+1] = u16_Checksum & 0xff;   // lower byte
+    encodedDataIn[u16_PayloadLength] = (u16_Checksum >> 8) & 0xff;  // upper byte
+    encodedDataIn[u16_PayloadLength + 1] = u16_Checksum & 0xff;     // lower byte
 
     lfsr_reset();
     lfsr_whiten_bytes(encodedDataIn, encodedDataIn, u16_EncodingInLength);
 
-    for(uint16_t i = 0; i < u16_BlockCount; i++)
-    {
+    for (uint16_t i = 0; i < u16_BlockCount; i++) {
         tpc_encoder_reset();
         tpc_encoder_encode(&encodedDataIn[i * u16_TPC_InLength],
-							&encodedDataOut[i * u16_TPC_OutLength]);
+                           &encodedDataOut[i * u16_TPC_OutLength]);
     }
 
     *pu16_OutLength = u16_EncoderOutLength;
@@ -160,10 +156,14 @@ void FSKTxProcessor::octet_hex_to_bit(char* hex, char* bit) {
 }
 
 uint8_t FSKTxProcessor::hex_char_to_nibble(char c) {
-    if ('0' <= c && c <= '9') return c - '0';
-    else if ('a' <= c && c <= 'f') return c - 'a' + 10;
-    else if ('A' <= c && c <= 'F') return c - 'A' + 10;
-    else return 0;  // Or handle error
+    if ('0' <= c && c <= '9')
+        return c - '0';
+    else if ('a' <= c && c <= 'f')
+        return c - 'a' + 10;
+    else if ('A' <= c && c <= 'F')
+        return c - 'A' + 10;
+    else
+        return 0;  // Or handle error
 }
 
 uint8_t FSKTxProcessor::hex_pair_to_byte(char high, char low) {
@@ -226,16 +226,13 @@ int FSKTxProcessor::calculate_sample_for_ADV(PKT_INFO* pkt) {
     uint8_t advertisementDataByte[32] = {0};
 
     for (int i = 0; i < 32; i++) {
-
         advertisementDataByte[i] = hex_pair_to_byte(advertisementData[i * 2], advertisementData[i * 2 + 1]);
     }
 
-   // encode_radio_packet(advertisementDataByte, 32, &u16_OutLength);
+    // encode_radio_packet(advertisementDataByte, 32, &u16_OutLength);
 
-    for (int i = 8; i < MAX_NUM_PHY_BYTE; i++) 
-    {
-        for (int j = 7; j >= 0; j--) 
-        {
+    for (int i = 8; i < MAX_NUM_PHY_BYTE; i++) {
+        for (int j = 7; j >= 0; j--) {
             pkt->phy_bit[i * 8 + j] = (encodedDataOut[i] >> j) & 0x01;
             pkt->num_phy_bit++;
         }

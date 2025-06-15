@@ -8,7 +8,7 @@
 #include <cstring>
 
 class Trellis {
-public:
+   public:
     int k_length;
     int num_states;
     int poly;
@@ -20,11 +20,10 @@ public:
     std::vector<float> bw;
     std::vector<float> llrs;
 
-    Trellis(int poly, int k_len, int block_size) 
+    Trellis(int poly, int k_len, int block_size)
         : k_length(k_len),
-         poly(poly),
-         block_size(block_size)
-    {
+          poly(poly),
+          block_size(block_size) {
         num_states = 1 << (k_length - 1);
         fw_state_table.resize(2 * num_states);
         bw_state_table.resize(2 * num_states);
@@ -60,8 +59,8 @@ public:
             float val = input[offset + i];
             int base = i * bm_stride;
             for (int s = 0; s < num_states; ++s) {
-                bm[base + 2 * s]     = -val;
-                bm[base + 2 * s + 1] =  val;
+                bm[base + 2 * s] = -val;
+                bm[base + 2 * s + 1] = val;
             }
         }
 
@@ -118,4 +117,4 @@ public:
     }
 };
 
-#endif // TRELLIS_H
+#endif  // TRELLIS_H
