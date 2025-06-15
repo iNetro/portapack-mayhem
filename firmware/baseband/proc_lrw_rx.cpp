@@ -65,7 +65,7 @@ void LRWRxProcessor::agc_correct_iq(const buffer_c8_t& buffer, int N, float meas
     float gain_scalar = powf(10.0f, error_db / 20.0f);
 
     for (int i = 0; i < N; i++) {
-        buffer.p[i] = {buffer.p[i].real() * gain_scalar, buffer.p[i].imag() * gain_scalar};
+        buffer.p[i] = {buffer.p[i].real() * (int8_t)gain_scalar, buffer.p[i].imag() * (int8_t)gain_scalar};
     }
 }
 
@@ -189,7 +189,7 @@ void LRWRxProcessor::handleSyncWordState(const buffer_c16_t& decimator_out) {
 
     int errors = __builtin_popcountl(receivedSyncWord ^ validSyncWord) & 0xFFFFFFFF;
 
-    if (errors <= 4) {
+    if (errors <= 2) {
         fskPacketData.syncWord = receivedSyncWord;
         parseState = Parse_State_PDU_Payload;
         memset(fskPacketData.data, 0, sizeof(fskPacketData.data));
