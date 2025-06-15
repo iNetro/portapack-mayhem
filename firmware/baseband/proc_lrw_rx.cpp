@@ -22,7 +22,7 @@
  * Boston, MA 02110-1301, USA.
  */
 
- #include "proc_fsk_rx.hpp"
+ #include "proc_lrw_rx.hpp"
  #include "portapack_shared_memory.hpp"
  #include "sine_table_int8.hpp"
  #include "message.hpp"
@@ -33,7 +33,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-float FSKRxProcessor::detect_peak_power(const buffer_c8_t& buffer, int N) 
+float LRWRxProcessor::detect_peak_power(const buffer_c8_t& buffer, int N) 
 {
     int32_t power = 0;
 
@@ -55,7 +55,7 @@ float FSKRxProcessor::detect_peak_power(const buffer_c8_t& buffer, int N)
     return power_db;
 }
 
-void FSKRxProcessor::agc_correct_iq(const buffer_c8_t& buffer, int N, float measured_power) 
+void LRWRxProcessor::agc_correct_iq(const buffer_c8_t& buffer, int N, float measured_power) 
 {
     float power_db = 10.0f * log10f(measured_power / noise_floor);
     float error_db = target_power_db - power_db;
@@ -73,7 +73,7 @@ void FSKRxProcessor::agc_correct_iq(const buffer_c8_t& buffer, int N, float meas
     }
 }
 
-float FSKRxProcessor::get_phase_diff(const complex16_t &sample0, const complex16_t &sample1)
+float LRWRxProcessor::get_phase_diff(const complex16_t &sample0, const complex16_t &sample1)
 {
     // Calculate the phase difference between two samples.
     float dI = sample1.real() * sample0.real() + sample1.imag() * sample0.imag();
@@ -83,7 +83,7 @@ float FSKRxProcessor::get_phase_diff(const complex16_t &sample0, const complex16
     return phase_diff;
 }
 
-void FSKRxProcessor::demodulateFSKBits(const buffer_c16_t& decimator_out, int num_demod_byte) 
+void LRWRxProcessor::demodulateFSKBits(const buffer_c16_t& decimator_out, int num_demod_byte) 
 {
     for (; packet_index < num_demod_byte; packet_index++) 
     {
@@ -119,7 +119,7 @@ void FSKRxProcessor::demodulateFSKBits(const buffer_c16_t& decimator_out, int nu
     }
 }
 
-void FSKRxProcessor::resetPreambleTracking() 
+void LRWRxProcessor::resetPreambleTracking() 
 {
     frequency_offset = 0.0f;
     frequency_offset_estimate = 0.0f;
@@ -127,13 +127,13 @@ void FSKRxProcessor::resetPreambleTracking()
     memset(phase_buffer, 0, sizeof(phase_buffer));
 }
 
-void FSKRxProcessor::resetBitPacketIndex() 
+void LRWRxProcessor::resetBitPacketIndex() 
 {
     packet_index = 0;
     bit_index = 0;
 }
 
-void FSKRxProcessor::handlePreambleState(const buffer_c16_t &decimator_out) 
+void LRWRxProcessor::handlePreambleState(const buffer_c16_t &decimator_out) 
 {
     int num_symbols = (int)decimator_out.count / SAMPLE_PER_SYMBOL;
     const uint32_t validPreamble = DEFAULT_PREAMBLE;
@@ -186,7 +186,7 @@ void FSKRxProcessor::handlePreambleState(const buffer_c16_t &decimator_out)
     parseState = Parse_State_Sync;
 }
 
-void FSKRxProcessor::handleSyncWordState(const buffer_c16_t &decimator_out) {
+void LRWRxProcessor::handleSyncWordState(const buffer_c16_t &decimator_out) {
     const int syncword_bytes = 4;
     const uint32_t validSyncWord = DEFAULT_SYNC_WORD;
 
@@ -221,7 +221,7 @@ void FSKRxProcessor::handleSyncWordState(const buffer_c16_t &decimator_out) {
     resetBitPacketIndex();
 }
  
-void FSKRxProcessor::handlePDUPayloadState(const buffer_c16_t &decimator_out) 
+void LRWRxProcessor::handlePDUPayloadState(const buffer_c16_t &decimator_out) 
 {
     if ((int)decimator_out.count - samples_eaten <= 0) 
     {
@@ -244,7 +244,7 @@ void FSKRxProcessor::handlePDUPayloadState(const buffer_c16_t &decimator_out)
     parseState = Parse_State_Wait_For_Peak;
 }
  
- void FSKRxProcessor::execute(const buffer_c8_t& buffer) 
+ void LRWRxProcessor::execute(const buffer_c8_t& buffer) 
  {
     if (!configured) return;
 
@@ -299,7 +299,7 @@ void FSKRxProcessor::handlePDUPayloadState(const buffer_c16_t &decimator_out)
     }
  }
  
- void FSKRxProcessor::on_message(const Message* const message) {
+ void LRWRxProcessor::on_message(const Message* const message) {
     if (message->id == Message::ID::FSKRxConfigure)
     {
         configure(*reinterpret_cast<const FSKRxConfigureMessage*>(message));
@@ -329,7 +329,7 @@ void FSKRxProcessor::handlePDUPayloadState(const buffer_c16_t &decimator_out)
     }
  }
  
- void FSKRxProcessor::configure(const FSKRxConfigureMessage& message) {
+ void LRWRxProcessor::configure(const FSKRxConfigureMessage& message) {
      channel_number = message.channel_number;
      decim_0.configure(taps_60k0_lrw_decim_0.taps);
      decim_1.configure(taps_13k0_lrw_decim_1.taps);
@@ -338,7 +338,7 @@ void FSKRxProcessor::handlePDUPayloadState(const buffer_c16_t &decimator_out)
  }
  
  int main() {
-     EventDispatcher event_dispatcher{std::make_unique<FSKRxProcessor>()};
+     EventDispatcher event_dispatcher{std::make_unique<LRWRxProcessor>()};
      event_dispatcher.run();
      return 0;
  }

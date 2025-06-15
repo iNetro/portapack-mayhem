@@ -411,12 +411,12 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PFSK fsktx)
 
-### FSK RX
+### LRW RX
 
 set(MODE_CPPSRC
-	proc_fsk_rx.cpp
+	proc_lrw_rx.cpp
 )
-DeclareTargets(PFSR fskrx)
+DeclareTargets(PLRX lrwrx)
 
 ### LRW TX
 

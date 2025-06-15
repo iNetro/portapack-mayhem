@@ -22,8 +22,8 @@
  * Boston, MA 02110-1301, USA.
  */
 
- #ifndef __PROC_FSK_RX_H__
- #define __PROC_FSK_RX_H__
+ #ifndef __PROC_LRW_RX_H__
+ #define __PROC_LRW_RX_H__
  
  #include "baseband_processor.hpp"
  #include "baseband_thread.hpp"
@@ -40,7 +40,7 @@
 
   #include <math.h>
  
- class FSKRxProcessor : public BasebandProcessor {
+ class LRWRxProcessor : public BasebandProcessor {
     public:
      void execute(const buffer_c8_t& buffer) override;
      void on_message(const Message* const message) override;
@@ -155,5 +155,5 @@
      // clang-format on
  };
  
- #endif /*__PROC_FSK_RX_H__*/
+ #endif /*__PROC_LRW_RX_H__*/
  
