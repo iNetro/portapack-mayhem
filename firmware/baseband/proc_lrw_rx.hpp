@@ -59,7 +59,8 @@ class LRWRxProcessor : public BasebandProcessor {
         Parse_State_Wait_For_Peak = 0,
         Parse_State_Preamble,
         Parse_State_Sync,
-        Parse_State_PDU_Payload
+        Parse_State_PDU_Payload,
+        Parse_State_Parsing_Data
     };
 
     static constexpr size_t baseband_fs = 960000;
@@ -71,6 +72,7 @@ class LRWRxProcessor : public BasebandProcessor {
     void demodulateFSKBits(const buffer_c16_t& decimator_out, int num_demod_byte, bool hande);
     void resetPreambleTracking();
     void resetBitPacketIndex();
+    void resetToDefaultState();
 
     void handlePreambleState(const buffer_c16_t& decimator_out);
     void handleSyncWordState(const buffer_c16_t& decimator_out);
@@ -101,7 +103,7 @@ class LRWRxProcessor : public BasebandProcessor {
             .row_poly = 123,
             .col_poly = 123,
             .scale_row = 0.25f,
-            .num_iter = 3,
+            .num_iter = 2,
             .m_inlen = 576,
             .m_outlen = 320,
             .m_dec_output = std::vector<float>(576, 0.0f),
@@ -132,7 +134,8 @@ class LRWRxProcessor : public BasebandProcessor {
 
     uint8_t peak_timeout{0};
     float noise_floor{12.0};  // Using LNA 40 and VGA 20. 10.0 was 40/0 ratio.
-    float target_power_db{2.0};
+    float target_power_db{5.0};
+    float agc_power{0.0f};
 
     float frequency_offset_estimate{0.0f};
     float frequency_offset{0.0f};

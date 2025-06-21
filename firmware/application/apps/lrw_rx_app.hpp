@@ -57,6 +57,7 @@ struct LRWRecentEntry {
 
     uint32_t deviceId;
     uint16_t msgType;
+    uint8_t channelNumber{0};
     int dbValue;
     uint8_t lrwData[LRW_MESSAGE_SIZE / 3];
     FskPacketData packetData;
@@ -69,6 +70,7 @@ struct LRWRecentEntry {
         const uint32_t deviceId)
         : deviceId{deviceId},
           msgType{},
+          channelNumber{},
           dbValue{},
           lrwData{},
           packetData{} {
@@ -205,7 +207,7 @@ class LRWRxView : public View {
     bool auto_channel = false;
 
     int16_t timer_count{0};
-    int16_t timer_period{9};  // 150ms
+    int16_t timer_period{6};  // 100ms
 
     std::string filterBuffer{};
     std::string listFileBuffer{};
@@ -338,13 +340,13 @@ class LRWRxView : public View {
 #define DEVICE_ID_COLUMN_LENGTH 10
 #define MSG_TYPE_COLUMN_LENGTH 5
 #define OFFSET_COLUMN_LENGTH 7
-#define VERSION_COLUMN_LENGTH 5
+#define CHANNEL_COLUMN_LENGTH 5
 
     const RecentEntriesColumns columns{{
         {"Device ID", 10},
         {"Msg.", 5},
         {"Offset", 7},
-        {"Ver.", 5},
+        {"Ch.", 5},
     }};
 
     LRWRecentEntriesView recent_entries_view{columns, recent};

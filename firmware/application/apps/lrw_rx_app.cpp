@@ -199,13 +199,16 @@ void RecentEntriesTable<LRWRecentEntries>::draw(
     std::string deviceIdStr = to_string_dec_uint(entry.deviceId);
     std::string msgTypeStr = to_string_dec_uint(entry.msgType);
     std::string freqOffsetStr = to_string_dec_int(entry.packetData.frequency_offset_hz, 0);
+    std::string channelStr = to_string_dec_uint(entry.channelNumber);
     truncate(deviceIdStr, DEVICE_ID_COLUMN_LENGTH);
     truncate(msgTypeStr, MSG_TYPE_COLUMN_LENGTH);
     truncate(freqOffsetStr, OFFSET_COLUMN_LENGTH);
+    truncate(freqOffsetStr, CHANNEL_COLUMN_LENGTH);
 
     line = deviceIdStr + LRWRxView::pad_string_with_spaces(DEVICE_ID_COLUMN_LENGTH - deviceIdStr.length() + 1);
     line += msgTypeStr + LRWRxView::pad_string_with_spaces(MSG_TYPE_COLUMN_LENGTH - msgTypeStr.length() + 1);
     line += freqOffsetStr + LRWRxView::pad_string_with_spaces(OFFSET_COLUMN_LENGTH - freqOffsetStr.length() + 1);
+    line += channelStr + LRWRxView::pad_string_with_spaces(CHANNEL_COLUMN_LENGTH - channelStr.length() + 1);
 
     painter.draw_string(target_rect.location(), style, line);
 }
@@ -530,6 +533,7 @@ void LRWRxView::updateEntry(FskPacketData* packet, LRWRecentEntry& entry) {
     }
 
     entry.packetData.frequency_offset_hz = packet->frequency_offset_hz;
+    entry.channelNumber = channel_number;
 
     str_console += "Device ID: " + to_string_dec_uint(entry.deviceId) + "\r\n";
 }
