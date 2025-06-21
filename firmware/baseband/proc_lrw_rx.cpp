@@ -232,18 +232,14 @@ void LRWRxProcessor::execute(const buffer_c8_t& buffer) {
 
     float power = detect_peak_power(buffer, buffer.count);
 
-    if (power) 
-    {
+    if (power) {
         if (parseState == Parse_State_Wait_For_Peak) {
             parseState = Parse_State_Preamble;
             agc_power = power;
             fskPacketData.power = power;
         }
-    } 
-    else 
-    {
-        if (parseState == Parse_State_Preamble) 
-        {
+    } else {
+        if (parseState == Parse_State_Preamble) {
             peak_timeout++;
 
             // 960,000 fs / 2048 samples = 468.75 Hz, so 55 calls is about 0.053 seconds before timeout.
@@ -262,8 +258,7 @@ void LRWRxProcessor::execute(const buffer_c8_t& buffer) {
 
     samples_eaten = 0;
 
-    if (agc_power)
-    {
+    if (agc_power) {
         agc_correct_iq(buffer, buffer.count, agc_power);
     }
 

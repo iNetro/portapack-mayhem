@@ -75,7 +75,7 @@ typedef enum {
 struct BleRecentEntry {
     using Key = uint64_t;
 
-    static constexpr Key invalid_key = 0xffffffff;
+    static constexpr Key invalid_key = 0xFFFFFFFFFFFF;
 
     uint64_t macAddress;
     int dbValue;
@@ -206,8 +206,9 @@ class BLERxView : public View {
     void on_timer();
     void handle_entries_sort(uint8_t index);
     void handle_filter_options(uint8_t index);
-    void updateEntry(const BlePacketData* packet, BleRecentEntry& entry, ADV_PDU_TYPE pdu_type);
-    void parse_beacon_data(const uint8_t* data, uint8_t length, std::string& nameString, std::string& versionString);
+    bool updateEntry(const BlePacketData* packet, BleRecentEntry& entry, ADV_PDU_TYPE pdu_type);
+    bool parse_cognosos_beacon_data(const uint8_t* data, uint8_t length, std::string& nameString, std::string& versionString);
+    bool parse_beacon_data(const uint8_t* data, uint8_t length, std::string& nameString, std::string& versionString);
 
     NavigationView& nav_;
 
@@ -220,6 +221,7 @@ class BLERxView : public View {
     uint8_t channel_index{0};
     uint8_t sort_index{0};
     uint8_t filter_index{0};
+    bool uniqueParsing = false;
     std::string filter{};
     bool logging{false};
     bool serial_logging{false};
@@ -311,9 +313,10 @@ class BLERxView : public View {
 
     OptionsField options_filter{
         {18 * 8 + 2, 2 * 8},
-        4,
+        7,
         {{"Data", 0},
-         {"MAC", 1}}};
+         {"MAC", 1},
+         {"Unique", 2}}};
 
     Checkbox check_log{
         {10 * 8, 4 * 8 + 2},
@@ -366,8 +369,8 @@ class BLERxView : public View {
     BleRecentEntries tempList{};
 
     const RecentEntriesColumns columns{{
-        {"Device ID", 10},
-        {"Version", 13},
+        {"Name", 10},
+        {"Information", 13},
         {"dBm", 4},
     }};
 

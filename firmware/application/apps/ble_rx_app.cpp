@@ -601,6 +601,7 @@ BLERxView::BLERxView(NavigationView& nav)
 
     button_clear_list.on_select = [this](Button&) {
         recent.clear();
+        recent_entries_view.set_dirty();
     };
 
     button_switch.on_select = [&nav](Button&) {
@@ -642,7 +643,10 @@ BLERxView::BLERxView(NavigationView& nav)
 
     options_filter.on_change = [this](size_t index, int32_t v) {
         filter_index = (uint8_t)index;
+        recent.clear();
         handle_filter_options(v);
+        uniqueParsing = filter_index == 2 ? true : false;
+        recent_entries_view.set_dirty();
     };
 
     options_channel.set_selected_index(channel_index, true);
@@ -821,27 +825,19 @@ void BLERxView::on_data(BlePacketData* packet) {
 
     uint64_t macAddressEncoded = copy_mac_address_to_uint64(packet->macAddress);
 
-    bool foundCognosos = false;
-    bool foundIBeacon = false;
+    // Start of Packet stuffing.
+    // Masking off the top 2 bytes to avoid invalid keys.
 
-    // look for following pattern in data 0x52 0x08
-    for (int j = 0; j < packet->dataLen - 1; j++) {
-        if (packet->data[j] == 0xFF && packet->data[j + 1] == 0x52 && packet->data[j + 2] == 0x08) {
-            foundCognosos = true;
-            break;
-        }
+    BleRecentEntry tempEntry;
 
-        if (packet->data[j] == 0x4C && packet->data[j + 1] == 0x00 && packet->data[j + 2] == 0x02 && packet->data[j + 3] == 0x15) {
-            foundIBeacon = true;
-            break;
-        }
-    }
-
-    if (foundCognosos || foundIBeacon) {
-        // Start of Packet stuffing.
-        // Masking off the top 2 bytes to avoid invalid keys.
+    if (updateEntry(packet, tempEntry, (ADV_PDU_TYPE)packet->type)) {
         auto& entry = ::on_packet(recent, macAddressEncoded & 0xFFFFFFFFFFFF);
-        updateEntry(packet, entry, (ADV_PDU_TYPE)packet->type);
+
+        // Preserve exisisting data from entry.
+        tempEntry.macAddress = macAddressEncoded;
+        tempEntry.numHits = ++entry.numHits;
+
+        entry = tempEntry;
 
         handle_filter_options(options_filter.selected_index());
         handle_entries_sort(options_sort.selected_index());
@@ -1010,11 +1006,6 @@ void BLERxView::handle_filter_options(uint8_t index) {
                 return (to_string_mac_address(entry.packetData.macAddress, 6, false).find(value) == std::string::npos);
             });
             break;
-        case 2:  // filter by MAC address (All caps: e.g. AA:BB:CC:DD:EE:FF)
-            resetFilteredEntries(recent, [&value](const BleRecentEntry& entry) {
-                return (to_string_mac_address(entry.packetData.macAddress, 6, false).find(value) == std::string::npos);
-            });
-            break;
         default:
             break;
     }
@@ -1032,8 +1023,10 @@ BLERxView::~BLERxView() {
     baseband::shutdown();
 }
 
-void BLERxView::updateEntry(const BlePacketData* packet, BleRecentEntry& entry, ADV_PDU_TYPE pdu_type) {
+bool BLERxView::updateEntry(const BlePacketData* packet, BleRecentEntry& entry, ADV_PDU_TYPE pdu_type) {
     std::string data_string;
+
+    bool success = false;
 
     int i;
 
@@ -1057,7 +1050,6 @@ void BLERxView::updateEntry(const BlePacketData* packet, BleRecentEntry& entry, 
     entry.packetData.macAddress[4] = packet->macAddress[4];
     entry.packetData.macAddress[5] = packet->macAddress[5];
 
-    entry.numHits++;
     entry.pduType = pdu_type;
     entry.channelNumber = channel_number;
 
@@ -1071,62 +1063,112 @@ void BLERxView::updateEntry(const BlePacketData* packet, BleRecentEntry& entry, 
     // Only parse name for advertisment packets and empty name entries
     if (pdu_type == ADV_IND || pdu_type == ADV_NONCONN_IND)  // || pdu_type == SCAN_RSP || pdu_type == ADV_SCAN_IND)
     {
-        // ADV_PDU_PAYLOAD_TYPE_0_2_4_6* advertiseData = (ADV_PDU_PAYLOAD_TYPE_0_2_4_6*)entry.packetData.data;
+        if (uniqueParsing) {
+            success = parse_cognosos_beacon_data(packet->data, packet->dataLen, entry.nameString, entry.versionString);
+        }
 
-        // Parse Cognosos or iBeacon data
-        parse_beacon_data(packet->data, packet->dataLen, entry.nameString, entry.versionString);
+        if (!success && !uniqueParsing) {
+            success = parse_beacon_data(packet->data, packet->dataLen, entry.nameString, entry.versionString);
+        }
 
-        str_console = "Device ID: " + entry.nameString + "\t" + "Version: " + entry.versionString + "\t" + "RSSI: " + to_string_dec_int(entry.dbValue) + "dBm" + "\r\n";
+        str_console = "Name: " + entry.nameString + "\t" + "Information: " + entry.versionString + "\t" + "RSSI: " + to_string_dec_int(entry.dbValue) + "dBm" + "\r\n";
+
     } else if (pdu_type == ADV_DIRECT_IND || pdu_type == SCAN_REQ) {
         ADV_PDU_PAYLOAD_TYPE_1_3* directed_mac_data = (ADV_PDU_PAYLOAD_TYPE_1_3*)entry.packetData.data;
         reverse_byte_array(directed_mac_data->A1, 6);
     }
+
+    return success;
 }
 
-void BLERxView::parse_beacon_data(const uint8_t* data, uint8_t length, std::string& nameString, std::string& versionString) {
-    for (int j = 0; j < length - 1; j++) {
-        if (data[j] == 0xFF && data[j + 1] == 0x52 && data[j + 2] == 0x08) {
-            switch (data[j + 3]) {
-                case 0x02:
-                case 0x03: {
-                    uint32_t deviceID = (data[j + 7] << 24) | (data[j + 6] << 16) | (data[j + 5] << 8) | data[j + 4];
-                    nameString = std::to_string(deviceID);
-                    versionString = to_string_dec_uint(data[j + 11] & 0xFF) + "." + to_string_dec_uint(data[j + 10] & 0xFF) + "." + to_string_dec_uint(data[j + 9] & 0xFF) + "." + to_string_dec_uint(data[j + 8] & 0xFF);
-                    break;
-                }
-                case 0x05: {
-                    j += 2;
+bool BLERxView::parse_cognosos_beacon_data(const uint8_t* data, uint8_t length, std::string& nameString, std::string& versionString) {
+    uint8_t currentByte, currentLength, currentType = 0;
 
-                    uint32_t deviceID = (data[j + 7] << 24) | (data[j + 6] << 16) | (data[j + 5] << 8) | data[j + 4];
-                    nameString = std::to_string(deviceID);
-                    versionString = "ZA     ";
+    for (currentByte = 0; currentByte < length;) {
+        currentLength = data[currentByte++];
+        currentType = data[currentByte++];
+
+        // Subtract 1 because type is part of the length.
+        for (int i = 0; ((i < currentLength - 1) && (currentByte < length)); i++) {
+            if (currentType == 0xFF) {
+                if (data[currentByte] == 0x52 && data[currentByte + 1] == 0x08) {
+                    switch (data[currentByte + 2]) {
+                        case 0x02:
+                        case 0x03: {
+                            uint32_t deviceID = (data[currentByte + 6] << 24) | (data[currentByte + 5] << 16) | (data[currentByte + 4] << 8) | data[currentByte + 3];
+                            nameString = std::to_string(deviceID);
+                            versionString = to_string_dec_uint(data[currentByte + 11] & 0xFF) + "." + to_string_dec_uint(data[currentByte + 10] & 0xFF) + "." + to_string_dec_uint(data[currentByte + 9] & 0xFF) + "." + to_string_dec_uint(data[currentByte + 8] & 0xFF);
+                            return true;
+                        }
+                        case 0x05: {
+                            currentByte += 2;
+
+                            uint32_t deviceID = (data[currentByte + 6] << 24) | (data[currentByte + 5] << 16) | (data[currentByte + 4] << 8) | data[currentByte + 3];
+                            nameString = std::to_string(deviceID);
+                            versionString = "ZA     ";
+                            return true;
+                        }
+                    }
+
+                    break;
+                } else if (data[currentByte] == 0x4C && data[currentByte + 1] == 0x00 && data[currentByte + 2] == 0x02 && data[currentByte + 3] == 0x15) {
+                    if (memcmp(data + currentByte + 4, "\x6B\xF9\xF6\x98\x9B\x50\x43\x0C\x9A\xB0\xB6\x4E\xEB\x22\xDB\x16", 16) == 0) {
+                        nameString = "Cognosos";
+                        versionString = "In-Motion";
+                        return true;
+                    } else if (memcmp(data + currentByte + 4, "\xBA\xB2\x2B\x26\xE0\xB3\x47\x29\x9A\x81\xD6\xC7\x57\x8D\x07\x30", 16) == 0) {
+                        nameString = "Cognosos";
+                        versionString = "Post-Motion";
+                        return true;
+                    } else if (memcmp(data + currentByte + 4, "\xD8\x33\xDC\x0A\xF9\xD6\x45\xEC\x93\xE9\x96\xF3\x78\x21\x55\x4F", 16) == 0) {
+                        uint16_t major = data[currentByte + 20] << 8 | data[currentByte + 21];
+                        uint16_t minor = data[currentByte + 22] << 8 | data[currentByte + 23];
+                        uint32_t badge_id = major * 65536 + minor;
+
+                        nameString = std::to_string(badge_id);
+                        versionString = "Cognosos";
+                        return true;
+                    } else {
+                        nameString = "iBeacon";
+                        versionString = "Generic";
+                        return true;
+                    }
+
                     break;
                 }
             }
 
-            break;
-        } else if (data[j] == 0x4C && data[j + 1] == 0x00 && data[j + 2] == 0x02 && data[j + 3] == 0x15) {
-            if (memcmp(data + j + 4, "\x6B\xF9\xF6\x98\x9B\x50\x43\x0C\x9A\xB0\xB6\x4E\xEB\x22\xDB\x16", 16) == 0) {
-                nameString = "Cognosos";
-                versionString = "In-Motion";
-            } else if (memcmp(data + j + 4, "\xBA\xB2\x2B\x26\xE0\xB3\x47\x29\x9A\x81\xD6\xC7\x57\x8D\x07\x30", 16) == 0) {
-                nameString = "Cognosos";
-                versionString = "Post-Motion";
-            } else if (memcmp(data + j + 4, "\xD8\x33\xDC\x0A\xF9\xD6\x45\xEC\x93\xE9\x96\xF3\x78\x21\x55\x4F", 16) == 0) {
-                uint16_t major = data[j + 20] << 8 | data[j + 21];
-                uint16_t minor = data[j + 22] << 8 | data[j + 23];
-                uint32_t badge_id = major * 65536 + minor;
-
-                nameString = std::to_string(badge_id);
-                versionString = "Cognosos";
-            } else {
-                nameString = "iBeacon";
-                versionString = "Generic";
-            }
-
-            break;
+            currentByte++;
         }
     }
+
+    return false;
+}
+
+bool BLERxView::parse_beacon_data(const uint8_t* data, uint8_t length, std::string& nameString, std::string& versionString) {
+    uint8_t currentByte, currentLength, currentType = 0;
+
+    for (currentByte = 0; currentByte < length;) {
+        currentLength = data[currentByte++];
+        currentType = data[currentByte++];
+
+        // Subtract 1 because type is part of the length.
+        for (int i = 0; ((i < currentLength - 1) && (currentByte < length)); i++) {
+            // parse the name of bluetooth device: 0x08->Shortened Local Name; 0x09->Complete Local Name
+            if (currentType == 0x08 || currentType == 0x09) {
+                nameString += (char)data[currentByte];
+            }
+            currentByte++;
+        }
+    }
+
+    if (nameString.empty()) {
+        nameString = "N/A";
+    }
+
+    versionString = "";
+
+    return true;
 }
 
 } /* namespace ui */
