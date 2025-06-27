@@ -109,8 +109,8 @@ class BLETxView : public View {
     bool is_active() const;
     void toggle();
     void start();
+    void send_packet();
     void stop();
-    void reset();
     void handle_replay_thread_done(const uint32_t return_code);
     void file_error();
     bool saveFile(const std::filesystem::path& path);
@@ -156,6 +156,8 @@ class BLETxView : public View {
     uint32_t packet_counter{0};
     uint32_t num_packets{0};
     uint32_t current_packet{0};
+    uint8_t packetTxCount{0};
+    bool packetDone = false;
     bool random_mac = false;
     bool file_override = false;
 
@@ -170,6 +172,7 @@ class BLETxView : public View {
     std::vector<uint16_t> markedBytes{};
     CursorPos cursor_pos{};
     uint8_t marked_counter = 0;
+    uint8_t advCount = 0;
 
     static constexpr uint8_t mac_address_size_str{12};
     static constexpr uint8_t max_packet_size_str{62};

@@ -80,18 +80,11 @@ class BTLETxProcessor : public BasebandProcessor {
         int num_info_bit;
         char info_bit[MAX_NUM_PHY_BYTE * 8];  // without CRC and whitening
 
-        int num_info_byte;
-        uint8_t info_byte[MAX_NUM_PHY_BYTE];
-
         int num_phy_bit;
         char phy_bit[MAX_NUM_PHY_BYTE * 8];  // all bits which will be fed to GFSK modulator
 
-        int num_phy_byte;
-        uint8_t phy_byte[MAX_NUM_PHY_BYTE];
-
         int num_phy_sample;
-        char phy_sample[2 * MAX_NUM_PHY_SAMPLE];     // GFSK output to D/A (hackrf board)
-        int8_t phy_sample1[2 * MAX_NUM_PHY_SAMPLE];  // GFSK output to D/A (hackrf board)
+        int8_t phy_sample[2 * MAX_NUM_PHY_SAMPLE];     // GFSK output to D/A (hackrf board)
 
         int space;  // how many millisecond null signal shouwl be padded after this packet
     };
@@ -108,7 +101,7 @@ class BTLETxProcessor : public BasebandProcessor {
     void crc24(char* bit_in, int num_bit, char* init_hex, char* crc_result);
     int convert_hex_to_bit(char* hex, char* bit, int stream_flip, int octet_limit);
     void octet_hex_to_bit(char* hex, char* bit);
-    int gen_sample_from_phy_bit(char* bit, char* sample, int num_bit);
+    int gen_sample_from_phy_bit(char* bit, int8_t* sample, int num_bit);
     bool configured = false;
 
     float tmp_phy_bit_over_sampling[MAX_NUM_PHY_SAMPLE + 2 * LEN_GAUSS_FILTER * SAMPLE_PER_SYMBOL];
@@ -123,7 +116,10 @@ class BTLETxProcessor : public BasebandProcessor {
     uint32_t shift_zero{}, shift_one{};
     uint32_t progress_notice{}, progress_count{0};
     uint32_t sample_count{0};
+    uint32_t paddingCount{0};
+    uint32_t repeatCount{0};
     uint32_t phase{0}, sphase{0};
+    bool doneSending{false};
 
     uint8_t cur_bit{0};
     uint16_t bit_pos{0};

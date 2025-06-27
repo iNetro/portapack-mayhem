@@ -30,7 +30,7 @@
 
 #define new_way
 
-int BTLETxProcessor::gen_sample_from_phy_bit(char* bit, char* sample, int num_bit) {
+int BTLETxProcessor::gen_sample_from_phy_bit(char* bit, int8_t* sample, int num_bit) {
     int num_sample = (num_bit * SAMPLE_PER_SYMBOL) + (LEN_GAUSS_FILTER * SAMPLE_PER_SYMBOL);
 
     int8_t* tmp_phy_bit_over_sampling_int8 = (int8_t*)tmp_phy_bit_over_sampling;
@@ -332,39 +332,35 @@ int BTLETxProcessor::calculate_pkt_info(PKT_INFO* pkt) {
 void BTLETxProcessor::execute(const buffer_c8_t& buffer) {
     int8_t re, im;
 
-    // This is called at 4M/2048 = 1953Hz
-    for (size_t i = 0; i < buffer.count; i++) {
-        if (configured) {
-            // This is going to loop through each sample bit and push it to the output buffer.
-            if (sample_count > length) {
-                configured = false;
-                sample_count = 0;
+    if (!configured)
+    {
+        for (size_t i = 0; i < buffer.count; i++) 
+        {
+            buffer.p[i] = {0, 0}; // Fill the buffer with zeros if not configured
+        }
+        return;
+    }
 
-                txprogress_message.done = true;
-                shared_memory.application_queue.push(txprogress_message);
-            } else {
-                // Real and imaginary was already calculated in gen_sample_from_phy_bit.
-                // It was processed from each data bit, run through a Gaussian Filter, and then ran through sin and cos table to get each IQ bit.
-                re = (int8_t)packets.phy_sample[sample_count++];
-                im = (int8_t)packets.phy_sample[sample_count++];
-
-                buffer.p[i] = {re, im};
-
-                if (progress_count >= progress_notice) {
-                    progress_count = 0;
-                    txprogress_message.progress++;
-                    txprogress_message.done = false;
-                    shared_memory.application_queue.push(txprogress_message);
-                } else {
-                    progress_count++;
-                }
-            }
-        } else {
-            re = 0;
-            im = 0;
+    if (configured)
+    {
+        // This is called at 4M/2048 = 1953Hz
+        for (size_t i = 0; (i < buffer.count) && (sample_count < length); i++) 
+        {
+            re = packets.phy_sample[sample_count++];
+            im = packets.phy_sample[sample_count++];
 
             buffer.p[i] = {re, im};
         }
+    }
+
+    if (sample_count >= length) 
+    {
+        sample_count = 0;
+        configured = false;
+
+        doneSending = true;
+        txprogress_message.done = true;
+        shared_memory.application_queue.push(txprogress_message);
     }
 }
 
@@ -397,11 +393,13 @@ void BTLETxProcessor::configure(const BTLETxConfigureMessage& message) {
     // Starting at sample_count 0 since packets.num_phy_sample contains every sample needed to be sent out.
     sample_count = 0;
     progress_count = 0;
+    repeatCount = 0;
     progress_notice = 64;
 
     txprogress_message.progress = 0;
     txprogress_message.done = false;
     configured = true;
+    doneSending = false;
 }
 
 int main() {
